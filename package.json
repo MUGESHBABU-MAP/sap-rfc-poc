@@ -5,8 +5,10 @@
   "main": "test-connection.js",
   "scripts": {
     "test-connection": "node test-connection.js",
-    "test-mard": "node test-mard.js",
-    "test-fagl": "node test-fagl.js"
+    "test-mard": "node tests/test-mard.js",
+    "test-fagl": "node tests/test-fagl.js",
+    "test-recon": "node tests/test-recon-mock.js",
+    "start": "node app.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
