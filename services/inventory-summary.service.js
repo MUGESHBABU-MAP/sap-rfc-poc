@@ -4,7 +4,8 @@
  * Takes InventoryRecord[] from InventoryDatasetService
  * and groups by storageLocation to produce location-wise summaries.
  *
- * Replaces workbook tabs: WH10, ECOM, OSL1, PRD1, etc.
+ * Replaces workbook tabs: ECOM, WH10, OSL1, OSL2, PRD1, PRD2, etc.
+ * The UI will filter dynamically instead of separate worksheets.
  */
 class InventorySummaryService {
   /**
@@ -21,46 +22,46 @@ class InventorySummaryService {
       if (!locationMap[loc]) {
         locationMap[loc] = {
           location: loc,
-          unrestrictedQty: 0,
           unrestrictedValue: 0,
-          qualityQty: 0,
-          qualityValue: 0,
-          blockedQty: 0,
-          blockedValue: 0,
-          transitQty: 0,
           transitValue: 0,
-          returnsQty: 0,
+          qualityValue: 0,
+          restrictedValue: 0,
+          blockedValue: 0,
           returnsValue: 0,
           totalInventoryValue: 0,
+          materialCount: 0,
         };
       }
 
       const summary = locationMap[loc];
-      summary.unrestrictedQty += record.unrestrictedQty;
       summary.unrestrictedValue += record.unrestrictedValue;
-      summary.qualityQty += record.qualityQty;
-      summary.qualityValue += record.qualityValue;
-      summary.blockedQty += record.blockedQty;
-      summary.blockedValue += record.blockedValue;
-      summary.transitQty += record.transitQty;
       summary.transitValue += record.transitValue;
-      summary.returnsQty += record.returnsQty;
+      summary.qualityValue += record.qualityValue;
+      summary.restrictedValue += record.restrictedValue;
+      summary.blockedValue += record.blockedValue;
       summary.returnsValue += record.returnsValue;
+      summary.totalInventoryValue += record.totalInventoryValue;
+      summary.materialCount += 1;
     }
 
-    // Calculate total inventory value per location
-    for (const loc of Object.keys(locationMap)) {
-      const s = locationMap[loc];
-      s.totalInventoryValue =
-        s.unrestrictedValue +
-        s.qualityValue +
-        s.blockedValue +
-        s.transitValue +
-        s.returnsValue;
-    }
+    // Round final values
+    const results = Object.values(locationMap).map((s) => ({
+      ...s,
+      unrestrictedValue: round2(s.unrestrictedValue),
+      transitValue: round2(s.transitValue),
+      qualityValue: round2(s.qualityValue),
+      restrictedValue: round2(s.restrictedValue),
+      blockedValue: round2(s.blockedValue),
+      returnsValue: round2(s.returnsValue),
+      totalInventoryValue: round2(s.totalInventoryValue),
+    }));
 
-    return Object.values(locationMap);
+    return results;
   }
+}
+
+function round2(val) {
+  return Math.round(val * 100) / 100;
 }
 
 module.exports = InventorySummaryService;

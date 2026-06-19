@@ -13,7 +13,9 @@
     "test-mbew": "node tests/test-mbew.js",
     "test-fagl": "node tests/test-fagl.js",
     "test-fagl-values": "node tests/test-fagl-values.js",
-    "test-recon": "node tests/test-recon-mock.js"
+    "test-recon": "node tests/test-recon-mock.js",
+    "test-inventory-dataset": "node tests/test-inventory-dataset.js",
+    "test-inventory-summary": "node tests/test-inventory-summary.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
