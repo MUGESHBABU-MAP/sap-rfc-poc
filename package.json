@@ -21,7 +21,8 @@
     "test-gl-balances": "node tests/test-gl-balances.js",
     "test-fagl-fields": "node tests/test-fagl-fields.js",
     "test-fagl-where": "node tests/test-fagl-where.js",
-    "test-reconciliation": "node tests/test-reconciliation.js"
+    "test-reconciliation": "node tests/test-reconciliation.js",
+    "test-inventory-accounts": "node tests/test-inventory-accounts.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
