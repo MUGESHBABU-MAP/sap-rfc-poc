@@ -6,10 +6,12 @@ const InventoryDatasetService = require("./services/inventory-dataset.service");
 const InventorySummaryService = require("./services/inventory-summary.service");
 const GLDatasetService = require("./services/gl-dataset.service");
 const GLSummaryService = require("./services/gl-summary.service");
+const ReconciliationService = require("./services/reconciliation.service");
 
 // Route factories
 const inventoryRoutes = require("./routes/inventory.routes");
 const glRoutes = require("./routes/gl.routes");
+const reconciliationRoutes = require("./routes/reconciliation.routes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -30,6 +32,7 @@ const inventoryDataset = new InventoryDatasetService(sap);
 const inventorySummary = new InventorySummaryService();
 const glDataset = new GLDatasetService(sap);
 const glSummary = new GLSummaryService();
+const reconciliation = new ReconciliationService();
 
 let sapConnected = false;
 
@@ -62,8 +65,8 @@ app.get("/api/health", (req, res) => {
     data: {
       status: "ok",
       sapConnected,
-      version: "2.0.0",
-      phase: "Phase 2 - Inventory + GL",
+      version: "3.0.0",
+      phase: "Phase 3 - Reconciliation",
     },
   });
 });
@@ -71,9 +74,10 @@ app.get("/api/health", (req, res) => {
 // --- Route registration ---
 app.use("/api/inventory", inventoryRoutes(inventoryDataset, inventorySummary));
 app.use("/api/gl", glRoutes(glDataset, glSummary));
-
-// Phase 3: Reconciliation routes will be added here
-// app.use("/api/reconciliation", reconRoutes(...));
+app.use(
+  "/api/reconciliation",
+  reconciliationRoutes(inventoryDataset, glDataset, reconciliation),
+);
 
 // --- Start server ---
 app.listen(PORT, () => {
@@ -86,10 +90,12 @@ app.listen(PORT, () => {
   console.log(`\nPhase 2 - GL Endpoints:`);
   console.log(`  GET /api/gl/full?companyCode=&fiscalYear=&glAccount=`);
   console.log(`  GET /api/gl/summary?companyCode=&fiscalYear=&glAccount=`);
-  console.log(
-    `\nPhase 3 (pending): /api/reconciliation, /api/reconciliation/variance-analysis`,
-  );
-  console.log(`Phase 4 (pending): /api/export/*\n`);
+  console.log(`\nPhase 3 - Reconciliation Endpoints:`);
+  console.log(`  GET /api/reconciliation/plant`);
+  console.log(`  GET /api/reconciliation/storage-location`);
+  console.log(`  GET /api/reconciliation/top-variances?limit=100`);
+  console.log(`  GET /api/reconciliation/summary`);
+  console.log(`\nPhase 4 (pending): /api/export/*\n`);
 });
 
 module.exports = app;
