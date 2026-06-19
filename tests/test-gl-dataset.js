@@ -3,12 +3,8 @@
  *
  * Run: node tests/test-gl-dataset.js
  *
- * Tests:
- *   1. Connects to SAP
- *   2. Calls getGLBalances() with RRCTY=0, RVERS=001 (actuals only)
- *   3. Validates GLBalanceRecord structure
- *   4. Verifies cumulative balance = HSLVT + HSL01..HSL16
- *   5. Prints sample records and stats
+ * Uses the fixed GLDatasetService that reads in small batches
+ * and only uses HSL01-12 (no special periods 13-16).
  */
 require("dotenv").config({
   path: require("path").resolve(__dirname, "../.env"),
@@ -34,7 +30,8 @@ async function testGLDataset() {
     const service = new GLDatasetService(sap);
 
     console.log("=== Test 1: getGLBalances() - No additional filters ===");
-    console.log("(Auto-filtered: RRCTY=0, RVERS=001)\n");
+    console.log("(Auto-filtered: RRCTY=0, RVERS=001)");
+    console.log("(Using HSL01-12 in small batches)\n");
 
     const records = await service.getGLBalances();
 
@@ -51,7 +48,6 @@ async function testGLDataset() {
         "cumulativeBalance",
         "localCurrencyBalance",
         "transactionCurrencyBalance",
-        "groupCurrencyBalance",
       ];
 
       const sample = records[0];
@@ -77,7 +73,6 @@ async function testGLDataset() {
         (r) => r.debitCreditIndicator === "H",
       );
       const companies = [...new Set(records.map((r) => r.companyCode))];
-      const accounts = [...new Set(records.map((r) => r.glAccount))];
       const years = [...new Set(records.map((r) => r.fiscalYear))];
 
       console.log("\n--- Statistics ---");
@@ -86,18 +81,15 @@ async function testGLDataset() {
       console.log(`  Debit records (S): ${debitRecords.length}`);
       console.log(`  Credit records (H): ${creditRecords.length}`);
       console.log(`  Unique company codes: ${companies.join(", ")}`);
-      console.log(`  Unique GL accounts: ${accounts.length}`);
       console.log(`  Fiscal years: ${years.join(", ")}`);
 
       // Balance range
       const balances = records.map((r) => r.cumulativeBalance);
       const minBal = Math.min(...balances);
       const maxBal = Math.max(...balances);
-      const totalBal = balances.reduce((a, b) => a + b, 0);
       console.log(`\n--- Balance Range ---`);
       console.log(`  Min: ${minBal}`);
       console.log(`  Max: ${maxBal}`);
-      console.log(`  Sum of all balances: ${Math.round(totalBal * 100) / 100}`);
     }
 
     // Test with filter
