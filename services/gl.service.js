@@ -1,9 +1,9 @@
+/**
+ * @deprecated Use GLDatasetService and GLSummaryService instead.
+ * Kept for backwards compatibility with legacy test scripts.
+ */
 const parseRows = require("../utils/parse-rows");
 
-/**
- * Legacy GL Service - kept for backwards compatibility with existing tests.
- * For the full dataset, use GLDatasetService instead.
- */
 class GLService {
   constructor(sapService) {
     this.sap = sapService;
@@ -15,7 +15,6 @@ class GLService {
       ["RBUKRS", "RACCT", "RYEAR", "RPMAX", "DRCRK"],
       { rowCount: 100 },
     );
-
     return parseRows(result);
   }
 }
