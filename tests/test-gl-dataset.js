@@ -60,33 +60,40 @@ async function testGLDataset() {
       }
       console.log(`\nAll fields present: ${allPresent ? "YES" : "NO"}`);
 
-      // Sample records
+      // Sample records (only first 5 to avoid stringify on large arrays)
       console.log("\n--- Sample Records (first 5) ---");
-      console.log(JSON.stringify(records.slice(0, 5), null, 2));
+      for (let i = 0; i < Math.min(5, records.length); i++) {
+        console.log(JSON.stringify(records[i]));
+      }
 
-      // Stats
-      const nonZero = records.filter((r) => r.cumulativeBalance !== 0);
-      const debitRecords = records.filter(
-        (r) => r.debitCreditIndicator === "S",
-      );
-      const creditRecords = records.filter(
-        (r) => r.debitCreditIndicator === "H",
-      );
-      const companies = [...new Set(records.map((r) => r.companyCode))];
-      const years = [...new Set(records.map((r) => r.fiscalYear))];
+      // Stats - iterative to avoid stack overflow on large arrays
+      let nonZeroCount = 0;
+      let debitCount = 0;
+      let creditCount = 0;
+      let minBal = Infinity;
+      let maxBal = -Infinity;
+      const companiesSet = new Set();
+      const yearsSet = new Set();
+
+      for (let i = 0; i < records.length; i++) {
+        const r = records[i];
+        if (r.cumulativeBalance !== 0) nonZeroCount++;
+        if (r.debitCreditIndicator === "S") debitCount++;
+        if (r.debitCreditIndicator === "H") creditCount++;
+        if (r.cumulativeBalance < minBal) minBal = r.cumulativeBalance;
+        if (r.cumulativeBalance > maxBal) maxBal = r.cumulativeBalance;
+        companiesSet.add(r.companyCode);
+        yearsSet.add(r.fiscalYear);
+      }
 
       console.log("\n--- Statistics ---");
       console.log(`  Total records: ${records.length}`);
-      console.log(`  Non-zero balance records: ${nonZero.length}`);
-      console.log(`  Debit records (S): ${debitRecords.length}`);
-      console.log(`  Credit records (H): ${creditRecords.length}`);
-      console.log(`  Unique company codes: ${companies.join(", ")}`);
-      console.log(`  Fiscal years: ${years.join(", ")}`);
+      console.log(`  Non-zero balance records: ${nonZeroCount}`);
+      console.log(`  Debit records (S): ${debitCount}`);
+      console.log(`  Credit records (H): ${creditCount}`);
+      console.log(`  Unique company codes: ${[...companiesSet].join(", ")}`);
+      console.log(`  Fiscal years: ${[...yearsSet].join(", ")}`);
 
-      // Balance range
-      const balances = records.map((r) => r.cumulativeBalance);
-      const minBal = Math.min(...balances);
-      const maxBal = Math.max(...balances);
       console.log(`\n--- Balance Range ---`);
       console.log(`  Min: ${minBal}`);
       console.log(`  Max: ${maxBal}`);
