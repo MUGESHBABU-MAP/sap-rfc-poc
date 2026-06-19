@@ -19,7 +19,8 @@
     "test-gl-dataset": "node tests/test-gl-dataset.js",
     "test-gl-summary": "node tests/test-gl-summary.js",
     "test-gl-balances": "node tests/test-gl-balances.js",
-    "test-fagl-fields": "node tests/test-fagl-fields.js"
+    "test-fagl-fields": "node tests/test-fagl-fields.js",
+    "test-fagl-where": "node tests/test-fagl-where.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
