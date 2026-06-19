@@ -1,5 +1,9 @@
 const parseRows = require("../utils/parse-rows");
 
+/**
+ * Legacy Inventory Service - kept for backwards compatibility with existing tests.
+ * For the full dataset, use InventoryDatasetService instead.
+ */
 class InventoryService {
   constructor(sapService) {
     this.sap = sapService;
@@ -9,7 +13,7 @@ class InventoryService {
     const result = await this.sap.readTable(
       "MARD",
       ["MATNR", "WERKS", "LGORT", "LABST", "INSME", "SPEME"],
-      100,
+      { rowCount: 100 },
     );
 
     return parseRows(result);

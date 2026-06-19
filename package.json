@@ -1,14 +1,19 @@
 {
   "name": "sap-rfc-poc",
-  "version": "1.0.0",
-  "description": "SAP RFC connectivity PoC - MARD and FAGLFLEXT read via RFC_READ_TABLE",
-  "main": "test-connection.js",
+  "version": "2.0.0",
+  "description": "Inventory & GL Reconciliation MVP - SAP RFC extraction with REST APIs",
+  "main": "app.js",
   "scripts": {
+    "start": "node app.js",
     "test-connection": "node test-connection.js",
     "test-mard": "node tests/test-mard.js",
+    "test-mara": "node tests/test-mara.js",
+    "test-makt": "node tests/test-makt.js",
+    "test-marc": "node tests/test-marc.js",
+    "test-mbew": "node tests/test-mbew.js",
     "test-fagl": "node tests/test-fagl.js",
-    "test-recon": "node tests/test-recon-mock.js",
-    "start": "node app.js"
+    "test-fagl-values": "node tests/test-fagl-values.js",
+    "test-recon": "node tests/test-recon-mock.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
