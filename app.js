@@ -10,6 +10,8 @@ const ReconciliationService = require("./services/reconciliation.service");
 const ExportService = require("./services/export.service");
 const FieldMappingService = require("./services/field-mapping.service");
 const CustomerWorkbookService = require("./services/customer-workbook.service");
+const CompanyService = require("./services/company.service");
+const FinanceWorkbookService = require("./services/finance-workbook.service");
 
 // Route factories
 const inventoryRoutes = require("./routes/inventory.routes");
@@ -42,6 +44,8 @@ const reconciliation = new ReconciliationService();
 const exportService = new ExportService();
 const fieldMapping = new FieldMappingService();
 const customerWorkbook = new CustomerWorkbookService();
+const companyService = new CompanyService(sap);
+const financeWorkbook = new FinanceWorkbookService();
 
 let sapConnected = false;
 
@@ -74,8 +78,8 @@ app.get("/api/health", (req, res) => {
     data: {
       status: "ok",
       sapConnected,
-      version: "3.12.0",
-      phase: "Phase 3.12 - Customer Workbook",
+      version: "3.13.0",
+      phase: "Phase 3.13 - Finance Reconciliation",
     },
   });
 });
@@ -103,6 +107,78 @@ app.use(
   customerWorkbookRoutes(inventoryDataset, customerWorkbook),
 );
 
+// --- Finance Reconciliation Workbook ---
+const accountMaster = require("./config/inventory-account-master.json");
+app.get("/api/finance-workbook", async (req, res) => {
+  try {
+    if (!req.query.companyCode || !req.query.plant) {
+      return res.status(400).json({
+        success: false,
+        error: "Parameters 'companyCode' and 'plant' are required.",
+        hint: "Example: /api/finance-workbook?companyCode=1000&plant=1000&fiscalYear=2026",
+      });
+    }
+
+    const companyCode = req.query.companyCode;
+    const plant = req.query.plant;
+    const fiscalYear = req.query.fiscalYear || undefined;
+    const period = req.query.period || "ALL";
+
+    console.log(
+      `[FinanceWorkbook] cc=${companyCode} plant=${plant} year=${fiscalYear}`,
+    );
+
+    const companyData = await companyService.getCompanyCurrency(companyCode);
+    const inventoryRecords = await inventoryDataset.getInventoryDataset({
+      plant,
+    });
+    const inventoryAccounts =
+      (accountMaster[companyCode] || {}).inventoryAccounts || [];
+    const glFilters = {
+      companyCode,
+      fiscalYear,
+      inventoryAccounts:
+        inventoryAccounts.length > 0 ? inventoryAccounts : undefined,
+    };
+    const glRecords = await glDataset.getGLBalances(glFilters);
+    const plantRecon = reconciliation.reconcileByPlant(
+      inventoryRecords,
+      glRecords,
+    );
+    const locationRecon = reconciliation.reconcileByStorageLocation(
+      inventoryRecords,
+      glRecords,
+    );
+    const topVariances = reconciliation.getTopVariances(
+      inventoryRecords,
+      glRecords,
+      100,
+    );
+
+    const result = await financeWorkbook.generateFinanceWorkbook(
+      { inventoryRecords, glRecords, plantRecon, locationRecon, topVariances },
+      {
+        companyCode,
+        plant,
+        fiscalYear,
+        period,
+        currency: companyData.currency,
+      },
+    );
+
+    console.log(
+      `[FinanceWorkbook] Done: ${result.sheetCount} sheets, ${result.executionTime}s`,
+    );
+    const filename = require("path").basename(result.filePath);
+    res.download(result.filePath, filename, (err) => {
+      if (err) console.error("Download error:", err.message);
+    });
+  } catch (err) {
+    console.error("GET /api/finance-workbook error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // --- Start server ---
 app.listen(PORT, () => {
   console.log(`\n=== Inventory & GL Reconciliation API ===`);
@@ -128,6 +204,10 @@ app.listen(PORT, () => {
   );
   console.log(`\nPhase 3.12 - Customer Workbook:`);
   console.log(`  GET /api/customer-workbook?plant=1000`);
+  console.log(`\nPhase 3.13 - Finance Reconciliation Workbook:`);
+  console.log(
+    `  GET /api/finance-workbook?companyCode=1000&plant=1000&fiscalYear=2026`,
+  );
   console.log(`\nAnalysis:`);
   console.log(`  GET /api/analysis/field-mapping`);
   console.log(`  GET /api/analysis/field-mapping/gaps\n`);

@@ -1,6 +1,6 @@
 {
   "name": "sap-rfc-poc",
-  "version": "3.12.0",
+  "version": "3.13.0",
   "description": "Inventory & GL Reconciliation MVP - SAP RFC extraction with REST APIs",
   "main": "app.js",
   "scripts": {
@@ -37,7 +37,8 @@
     "test-restricted-stock": "node tests/test-restricted-stock.js",
     "test-returns-stock": "node tests/test-returns-stock.js",
     "test-gap-closure": "node tests/test-gap-closure.js",
-    "test-customer-workbook": "node tests/test-customer-workbook.js"
+    "test-customer-workbook": "node tests/test-customer-workbook.js",
+    "test-finance-workbook": "node tests/test-finance-workbook.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
