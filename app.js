@@ -7,11 +7,13 @@ const InventorySummaryService = require("./services/inventory-summary.service");
 const GLDatasetService = require("./services/gl-dataset.service");
 const GLSummaryService = require("./services/gl-summary.service");
 const ReconciliationService = require("./services/reconciliation.service");
+const ExportService = require("./services/export.service");
 
 // Route factories
 const inventoryRoutes = require("./routes/inventory.routes");
 const glRoutes = require("./routes/gl.routes");
 const reconciliationRoutes = require("./routes/reconciliation.routes");
+const exportRoutes = require("./routes/export.routes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,6 +35,7 @@ const inventorySummary = new InventorySummaryService();
 const glDataset = new GLDatasetService(sap);
 const glSummary = new GLSummaryService();
 const reconciliation = new ReconciliationService();
+const exportService = new ExportService();
 
 let sapConnected = false;
 
@@ -65,8 +68,8 @@ app.get("/api/health", (req, res) => {
     data: {
       status: "ok",
       sapConnected,
-      version: "3.0.0",
-      phase: "Phase 3 - Reconciliation",
+      version: "3.6.0",
+      phase: "Phase 3.6 - Export",
     },
   });
 });
@@ -77,6 +80,16 @@ app.use("/api/gl", glRoutes(glDataset, glSummary));
 app.use(
   "/api/reconciliation",
   reconciliationRoutes(inventoryDataset, glDataset, reconciliation),
+);
+app.use(
+  "/api/export",
+  exportRoutes(
+    inventoryDataset,
+    inventorySummary,
+    glDataset,
+    reconciliation,
+    exportService,
+  ),
 );
 
 // --- Start server ---
@@ -95,7 +108,11 @@ app.listen(PORT, () => {
   console.log(`  GET /api/reconciliation/storage-location`);
   console.log(`  GET /api/reconciliation/top-variances?limit=100`);
   console.log(`  GET /api/reconciliation/summary`);
-  console.log(`\nPhase 4 (pending): /api/export/*\n`);
+  console.log(`\nPhase 3.6 - Export Endpoints:`);
+  console.log(`  GET /api/export/inventory`);
+  console.log(`  GET /api/export/summary`);
+  console.log(`  GET /api/export/location/:sloc`);
+  console.log(`  GET /api/export/reconciliation\n`);
 });
 
 module.exports = app;
