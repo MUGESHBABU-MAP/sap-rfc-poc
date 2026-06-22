@@ -4,15 +4,16 @@ const router = express.Router();
 const inventoryAccountsConfig = require("../config/inventory-accounts.config");
 
 /**
- * Export Routes (Phase 3.7 - Parameterized)
+ * Export Routes (Phase 3.8 - Parameterized + Performance Metrics)
  *
  * GET /api/export/inventory           - Plant inventory Excel (REQUIRES: plant)
  * GET /api/export/summary             - Inventory summary Excel (recommended default)
- * GET /api/export/location/:sloc      - Location-specific Excel
+ * GET /api/export/location/:sloc      - Location-specific Excel (SAP-filtered)
  * GET /api/export/reconciliation      - Reconciliation Excel (REQUIRES: companyCode, plant)
  *
  * All exports filter at SAP level. Never load full dataset.
  * All workbooks include Parameters metadata sheet.
+ * Performance metrics logged for each export.
  */
 module.exports = function (
   inventoryDatasetService,
@@ -24,11 +25,10 @@ module.exports = function (
   /**
    * GET /api/export/inventory
    * REQUIRED: plant
-   * Optional: storageLocation, material, materialGroup
+   * Optional: storageLocation, material
    */
   router.get("/inventory", async (req, res) => {
     try {
-      // Validation
       if (!req.query.plant) {
         return res.status(400).json({
           success: false,
@@ -37,23 +37,30 @@ module.exports = function (
         });
       }
 
+      const startTime = Date.now();
       const filters = {
         plant: req.query.plant,
         storageLocation: req.query.storageLocation || undefined,
         material: req.query.material || undefined,
       };
 
+      console.log(`[Export:Inventory] Filters: ${JSON.stringify(filters)}`);
       const records =
         await inventoryDatasetService.getInventoryDataset(filters);
+      console.log(`[Export:Inventory] Rows fetched: ${records.length}`);
 
       const params = { ...filters };
       const filePath = await exportService.exportInventoryWorkbook(
         records,
         params,
       );
-      const filename = path.basename(filePath);
 
-      res.download(filePath, filename, (err) => {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(
+        `[Export:Inventory] Exported: ${records.length} rows | Time: ${elapsed}s`,
+      );
+
+      res.download(filePath, path.basename(filePath), (err) => {
         if (err) console.error("Download error:", err.message);
       });
     } catch (err) {
@@ -65,18 +72,21 @@ module.exports = function (
   /**
    * GET /api/export/summary
    * Optional: plant, storageLocation
-   * This is the recommended default export (always small).
    */
   router.get("/summary", async (req, res) => {
     try {
+      const startTime = Date.now();
       const filters = {
         plant: req.query.plant || undefined,
         storageLocation: req.query.storageLocation || undefined,
         material: req.query.material || undefined,
       };
 
+      console.log(`[Export:Summary] Filters: ${JSON.stringify(filters)}`);
       const records =
         await inventoryDatasetService.getInventoryDataset(filters);
+      console.log(`[Export:Summary] Rows fetched: ${records.length}`);
+
       const summary = inventorySummaryService.summarizeByLocation(records);
 
       const params = { ...filters };
@@ -85,9 +95,13 @@ module.exports = function (
         records,
         params,
       );
-      const filename = path.basename(filePath);
 
-      res.download(filePath, filename, (err) => {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(
+        `[Export:Summary] Exported: ${summary.length} summary rows | Time: ${elapsed}s`,
+      );
+
+      res.download(filePath, path.basename(filePath), (err) => {
         if (err) console.error("Download error:", err.message);
       });
     } catch (err) {
@@ -98,32 +112,38 @@ module.exports = function (
 
   /**
    * GET /api/export/location/:sloc
-   * Fetches only the requested storage location from SAP.
+   * Fetches ONLY the requested location from SAP (server-side filter).
    * Optional: plant, material
    */
   router.get("/location/:sloc", async (req, res) => {
     try {
+      const startTime = Date.now();
       const storageLocation = req.params.sloc;
 
-      // Filter at SAP level — only fetch this location
       const filters = {
         plant: req.query.plant || undefined,
         storageLocation: storageLocation,
         material: req.query.material || undefined,
       };
 
+      console.log(`[Export:Location] Filters: ${JSON.stringify(filters)}`);
       const records =
         await inventoryDatasetService.getInventoryDataset(filters);
+      console.log(`[Export:Location] Rows fetched: ${records.length}`);
 
-      const params = { ...filters, storageLocation };
+      const params = { ...filters };
       const filePath = await exportService.exportLocationWorkbook(
         records,
         storageLocation,
         params,
       );
-      const filename = path.basename(filePath);
 
-      res.download(filePath, filename, (err) => {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(
+        `[Export:Location] Exported: ${records.length} rows | Time: ${elapsed}s`,
+      );
+
+      res.download(filePath, path.basename(filePath), (err) => {
         if (err) console.error("Download error:", err.message);
       });
     } catch (err) {
@@ -139,7 +159,6 @@ module.exports = function (
    */
   router.get("/reconciliation", async (req, res) => {
     try {
-      // Validation
       if (!req.query.companyCode) {
         return res.status(400).json({
           success: false,
@@ -156,11 +175,11 @@ module.exports = function (
         });
       }
 
+      const startTime = Date.now();
       const companyCode = req.query.companyCode;
       const plant = req.query.plant;
       const fiscalYear = req.query.fiscalYear || undefined;
 
-      // Inventory accounts: from query param or config
       let inventoryAccounts;
       if (req.query.inventoryAccounts) {
         inventoryAccounts = req.query.inventoryAccounts
@@ -170,7 +189,6 @@ module.exports = function (
         inventoryAccounts = inventoryAccountsConfig.getAccounts(companyCode);
       }
 
-      // Fetch inventory (filtered by plant)
       const invFilters = { plant };
       const glFilters = {
         companyCode,
@@ -179,29 +197,35 @@ module.exports = function (
           inventoryAccounts.length > 0 ? inventoryAccounts : undefined,
       };
 
+      console.log(`[Export:Recon] Inv filters: ${JSON.stringify(invFilters)}`);
+      console.log(`[Export:Recon] GL filters: ${JSON.stringify(glFilters)}`);
+
       const [inventoryRecords, glRecords] = await Promise.all([
         inventoryDatasetService.getInventoryDataset(invFilters),
         glDatasetService.getGLBalances(glFilters),
       ]);
+
+      console.log(
+        `[Export:Recon] Inv rows: ${inventoryRecords.length} | GL rows: ${glRecords.length}`,
+      );
 
       const reconResults = reconciliationService.reconcileByPlant(
         inventoryRecords,
         glRecords,
       );
 
-      const params = {
-        companyCode,
-        fiscalYear,
-        plant,
-        inventoryAccounts,
-      };
+      const params = { companyCode, fiscalYear, plant, inventoryAccounts };
       const filePath = await exportService.exportReconciliationWorkbook(
         reconResults,
         params,
       );
-      const filename = path.basename(filePath);
 
-      res.download(filePath, filename, (err) => {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(
+        `[Export:Recon] Exported: ${reconResults.length} plants | Time: ${elapsed}s`,
+      );
+
+      res.download(filePath, path.basename(filePath), (err) => {
         if (err) console.error("Download error:", err.message);
       });
     } catch (err) {

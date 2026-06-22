@@ -139,36 +139,53 @@ class InventoryDatasetService {
       "SPEME",
       "UMLME",
     ];
-    const where = [];
-    if (filters.plant) where.push(`WERKS = '${filters.plant}'`);
+    const conditions = [];
+    if (filters.plant) conditions.push(`WERKS = '${filters.plant}'`);
     if (filters.storageLocation)
-      where.push(`LGORT = '${filters.storageLocation}'`);
-    if (filters.material) where.push(`MATNR = '${filters.material}'`);
+      conditions.push(`LGORT = '${filters.storageLocation}'`);
+    if (filters.material) conditions.push(`MATNR = '${filters.material}'`);
+    const where = this._combineWhere(conditions);
+    console.log(
+      `  [MARD] WHERE: ${where.length > 0 ? where.join(" ") : "(none)"}`,
+    );
     const result = await this.sap.readTable("MARD", fields, { where });
     return parseRows(result);
   }
 
   async _readMARA(filters) {
     const fields = ["MATNR", "MTART", "MATKL", "MEINS"];
-    const where = [];
-    if (filters.material) where.push(`MATNR = '${filters.material}'`);
+    const conditions = [];
+    if (filters.material) conditions.push(`MATNR = '${filters.material}'`);
+    if (filters.plant) conditions.push(`WERKS = '${filters.plant}'`);
+    const where = this._combineWhere(conditions);
+    console.log(
+      `  [MARA] WHERE: ${where.length > 0 ? where.join(" ") : "(none)"}`,
+    );
     const result = await this.sap.readTable("MARA", fields, { where });
     return parseRows(result);
   }
 
   async _readMAKT(filters) {
     const fields = ["MATNR", "MAKTX"];
-    const where = ["SPRAS = 'E'"];
-    if (filters.material) where.push(`MATNR = '${filters.material}'`);
+    const conditions = ["SPRAS = 'E'"];
+    if (filters.material) conditions.push(`MATNR = '${filters.material}'`);
+    const where = this._combineWhere(conditions);
+    console.log(
+      `  [MAKT] WHERE: ${where.length > 0 ? where.join(" ") : "(none)"}`,
+    );
     const result = await this.sap.readTable("MAKT", fields, { where });
     return parseRows(result);
   }
 
   async _readMARC(filters) {
     const fields = ["MATNR", "WERKS"];
-    const where = [];
-    if (filters.material) where.push(`MATNR = '${filters.material}'`);
-    if (filters.plant) where.push(`WERKS = '${filters.plant}'`);
+    const conditions = [];
+    if (filters.material) conditions.push(`MATNR = '${filters.material}'`);
+    if (filters.plant) conditions.push(`WERKS = '${filters.plant}'`);
+    const where = this._combineWhere(conditions);
+    console.log(
+      `  [MARC] WHERE: ${where.length > 0 ? where.join(" ") : "(none)"}`,
+    );
     const result = await this.sap.readTable("MARC", fields, { where });
     return parseRows(result);
   }
@@ -183,11 +200,49 @@ class InventoryDatasetService {
       "SALK3",
       "LBKUM",
     ];
-    const where = [];
-    if (filters.material) where.push(`MATNR = '${filters.material}'`);
-    if (filters.plant) where.push(`BWKEY = '${filters.plant}'`);
+    const conditions = [];
+    if (filters.material) conditions.push(`MATNR = '${filters.material}'`);
+    if (filters.plant) conditions.push(`BWKEY = '${filters.plant}'`);
+    const where = this._combineWhere(conditions);
+    console.log(
+      `  [MBEW] WHERE: ${where.length > 0 ? where.join(" ") : "(none)"}`,
+    );
     const result = await this.sap.readTable("MBEW", fields, { where });
     return parseRows(result);
+  }
+
+  /**
+   * Combine WHERE conditions into single-row AND format.
+   * Customer SAP requires: ["WERKS = '1000' AND LGORT = 'WH10'"]
+   * NOT: ["WERKS = '1000'", "LGORT = 'WH10'"]
+   *
+   * Splits at 72-char boundary for RFC_READ_TABLE OPTIONS row limit.
+   */
+  _combineWhere(conditions) {
+    if (conditions.length === 0) return [];
+
+    const combined = conditions.join(" AND ");
+
+    // RFC_READ_TABLE OPTIONS TEXT field is max 72 chars per row
+    if (combined.length <= 72) {
+      return [combined];
+    }
+
+    // Split into multiple rows at AND boundaries
+    const rows = [];
+    let current = "";
+    for (let i = 0; i < conditions.length; i++) {
+      const prefix = current.length === 0 ? "" : " AND ";
+      const candidate = current + prefix + conditions[i];
+      if (candidate.length <= 72) {
+        current = candidate;
+      } else {
+        if (current.length > 0) rows.push(current);
+        current = "AND " + conditions[i];
+      }
+    }
+    if (current.length > 0) rows.push(current);
+    return rows;
   }
 
   // --- Utility ---
