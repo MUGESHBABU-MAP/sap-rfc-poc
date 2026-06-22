@@ -156,7 +156,7 @@ class InventoryDatasetService {
     const fields = ["MATNR", "MTART", "MATKL", "MEINS"];
     const conditions = [];
     if (filters.material) conditions.push(`MATNR = '${filters.material}'`);
-    if (filters.plant) conditions.push(`WERKS = '${filters.plant}'`);
+    // NOTE: MARA does NOT contain WERKS. Do not filter by plant here.
     const where = this._combineWhere(conditions);
     console.log(
       `  [MARA] WHERE: ${where.length > 0 ? where.join(" ") : "(none)"}`,

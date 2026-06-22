@@ -26,7 +26,8 @@
     "test-export": "node tests/test-export.js",
     "test-export-summary": "node tests/test-export-summary.js",
     "test-export-location": "node tests/test-export-location.js",
-    "test-inventory-filter": "node tests/test-inventory-filter.js"
+    "test-inventory-filter": "node tests/test-inventory-filter.js",
+    "test-mara-filter": "node tests/test-mara-filter.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
