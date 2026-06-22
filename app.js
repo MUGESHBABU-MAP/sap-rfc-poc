@@ -9,6 +9,7 @@ const GLSummaryService = require("./services/gl-summary.service");
 const ReconciliationService = require("./services/reconciliation.service");
 const ExportService = require("./services/export.service");
 const FieldMappingService = require("./services/field-mapping.service");
+const CustomerWorkbookService = require("./services/customer-workbook.service");
 
 // Route factories
 const inventoryRoutes = require("./routes/inventory.routes");
@@ -16,6 +17,7 @@ const glRoutes = require("./routes/gl.routes");
 const reconciliationRoutes = require("./routes/reconciliation.routes");
 const exportRoutes = require("./routes/export.routes");
 const analysisRoutes = require("./routes/analysis.routes");
+const customerWorkbookRoutes = require("./routes/customer-workbook.routes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -39,6 +41,7 @@ const glSummary = new GLSummaryService();
 const reconciliation = new ReconciliationService();
 const exportService = new ExportService();
 const fieldMapping = new FieldMappingService();
+const customerWorkbook = new CustomerWorkbookService();
 
 let sapConnected = false;
 
@@ -71,8 +74,8 @@ app.get("/api/health", (req, res) => {
     data: {
       status: "ok",
       sapConnected,
-      version: "3.7.0",
-      phase: "Phase 3.7 - Parameterized Export",
+      version: "3.12.0",
+      phase: "Phase 3.12 - Customer Workbook",
     },
   });
 });
@@ -95,6 +98,10 @@ app.use(
   ),
 );
 app.use("/api/analysis", analysisRoutes(fieldMapping));
+app.use(
+  "/api/customer-workbook",
+  customerWorkbookRoutes(inventoryDataset, customerWorkbook),
+);
 
 // --- Start server ---
 app.listen(PORT, () => {
@@ -117,8 +124,13 @@ app.listen(PORT, () => {
   console.log(`  GET /api/export/summary?plant=1000`);
   console.log(`  GET /api/export/location/WH10?plant=1000`);
   console.log(
-    `  GET /api/export/reconciliation?companyCode=1000&plant=1000&fiscalYear=2026\n`,
+    `  GET /api/export/reconciliation?companyCode=1000&plant=1000&fiscalYear=2026`,
   );
+  console.log(`\nPhase 3.12 - Customer Workbook:`);
+  console.log(`  GET /api/customer-workbook?plant=1000`);
+  console.log(`\nAnalysis:`);
+  console.log(`  GET /api/analysis/field-mapping`);
+  console.log(`  GET /api/analysis/field-mapping/gaps\n`);
 });
 
 module.exports = app;
