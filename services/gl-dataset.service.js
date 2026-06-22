@@ -115,7 +115,9 @@ class GLDatasetService {
       };
     });
 
-    return records;
+    // Post-process: filter by inventory accounts in Node.js
+    // (IN() syntax not supported on all SAP systems)
+    return this._filterByInventoryAccounts(records, filters.inventoryAccounts);
   }
 
   /**
@@ -125,8 +127,8 @@ class GLDatasetService {
    * using AND keyword. Some SAP systems do not support multiple
    * OPTIONS rows as implicit AND (causes dynamic parsing error).
    *
-   * For inventoryAccounts (multiple accounts), uses IN syntax or
-   * splits into multiple OR calls if RFC_READ_TABLE doesn't support IN.
+   * NOTE: inventoryAccounts filtering is done in Node.js post-processing
+   * because RFC_READ_TABLE does NOT support IN() syntax on all systems.
    *
    * Returns: string[] (each element is one OPTIONS row)
    */
@@ -143,29 +145,41 @@ class GLDatasetService {
       conditions.push(`RACCT = '${filters.glAccount}'`);
     }
 
-    // Multiple inventory accounts: build OR condition
-    // RFC_READ_TABLE OPTIONS row has 72 char limit per row
-    // Use: RACCT IN ('acct1','acct2','acct3')
-    if (filters.inventoryAccounts && filters.inventoryAccounts.length > 0) {
-      const accounts = filters.inventoryAccounts;
-      // Build IN clause: RACCT IN ('x','y','z')
-      const inList = accounts.map((a) => `'${a}'`).join(",");
-      conditions.push(`RACCT IN (${inList})`);
-    }
+    // NOTE: inventoryAccounts are NOT added to WHERE.
+    // IN() syntax is not supported on all SAP systems.
+    // Filtering is done in Node.js after data retrieval.
 
     // Join all conditions with AND into a single OPTIONS row
-    // NOTE: If the combined string exceeds 72 chars, RFC_READ_TABLE
-    // allows continuation on the next OPTIONS row
     const combined = conditions.join(" AND ");
 
     // RFC_READ_TABLE OPTIONS TEXT field is 72 chars max per row
-    // Split into multiple rows if needed (SAP concatenates them)
     if (combined.length <= 72) {
       return [combined];
     }
 
     // Split at AND boundaries to stay under 72 chars per row
     return this._splitWhereRows(conditions);
+  }
+
+  /**
+   * Post-process: filter records by inventory accounts in Node.js.
+   * @param {GLBalanceRecord[]} records
+   * @param {string[]} inventoryAccounts
+   * @returns {GLBalanceRecord[]}
+   */
+  _filterByInventoryAccounts(records, inventoryAccounts) {
+    if (!inventoryAccounts || inventoryAccounts.length === 0) {
+      return records;
+    }
+
+    const accountSet = new Set(inventoryAccounts);
+    const filtered = [];
+    for (let i = 0; i < records.length; i++) {
+      if (accountSet.has(records[i].glAccount)) {
+        filtered.push(records[i]);
+      }
+    }
+    return filtered;
   }
 
   /**

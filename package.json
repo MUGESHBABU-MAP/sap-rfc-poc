@@ -38,7 +38,8 @@
     "test-returns-stock": "node tests/test-returns-stock.js",
     "test-gap-closure": "node tests/test-gap-closure.js",
     "test-customer-workbook": "node tests/test-customer-workbook.js",
-    "test-finance-workbook": "node tests/test-finance-workbook.js"
+    "test-finance-workbook": "node tests/test-finance-workbook.js",
+    "test-gl-account-filter": "node tests/test-gl-account-filter.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
