@@ -28,7 +28,12 @@
     "test-export-location": "node tests/test-export-location.js",
     "test-inventory-filter": "node tests/test-inventory-filter.js",
     "test-mara-filter": "node tests/test-mara-filter.js",
-    "test-field-mapping": "node tests/test-field-mapping.js"
+    "test-field-mapping": "node tests/test-field-mapping.js",
+    "test-mard-extended": "node tests/test-mard-extended.js",
+    "test-mbew-extended": "node tests/test-mbew-extended.js",
+    "test-mchb": "node tests/test-mchb.js",
+    "test-special-stock": "node tests/test-special-stock.js",
+    "test-field-discovery": "node tests/test-field-discovery.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
