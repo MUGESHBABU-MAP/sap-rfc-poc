@@ -8,12 +8,14 @@ const GLDatasetService = require("./services/gl-dataset.service");
 const GLSummaryService = require("./services/gl-summary.service");
 const ReconciliationService = require("./services/reconciliation.service");
 const ExportService = require("./services/export.service");
+const FieldMappingService = require("./services/field-mapping.service");
 
 // Route factories
 const inventoryRoutes = require("./routes/inventory.routes");
 const glRoutes = require("./routes/gl.routes");
 const reconciliationRoutes = require("./routes/reconciliation.routes");
 const exportRoutes = require("./routes/export.routes");
+const analysisRoutes = require("./routes/analysis.routes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -36,6 +38,7 @@ const glDataset = new GLDatasetService(sap);
 const glSummary = new GLSummaryService();
 const reconciliation = new ReconciliationService();
 const exportService = new ExportService();
+const fieldMapping = new FieldMappingService();
 
 let sapConnected = false;
 
@@ -91,6 +94,7 @@ app.use(
     exportService,
   ),
 );
+app.use("/api/analysis", analysisRoutes(fieldMapping));
 
 // --- Start server ---
 app.listen(PORT, () => {
