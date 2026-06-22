@@ -68,8 +68,8 @@ app.get("/api/health", (req, res) => {
     data: {
       status: "ok",
       sapConnected,
-      version: "3.6.0",
-      phase: "Phase 3.6 - Export",
+      version: "3.7.0",
+      phase: "Phase 3.7 - Parameterized Export",
     },
   });
 });
@@ -108,11 +108,13 @@ app.listen(PORT, () => {
   console.log(`  GET /api/reconciliation/storage-location`);
   console.log(`  GET /api/reconciliation/top-variances?limit=100`);
   console.log(`  GET /api/reconciliation/summary`);
-  console.log(`\nPhase 3.6 - Export Endpoints:`);
-  console.log(`  GET /api/export/inventory`);
-  console.log(`  GET /api/export/summary`);
-  console.log(`  GET /api/export/location/:sloc`);
-  console.log(`  GET /api/export/reconciliation\n`);
+  console.log(`\nPhase 3.7 - Export Endpoints (parameterized):`);
+  console.log(`  GET /api/export/inventory?plant=1000&storageLocation=WH10`);
+  console.log(`  GET /api/export/summary?plant=1000`);
+  console.log(`  GET /api/export/location/WH10?plant=1000`);
+  console.log(
+    `  GET /api/export/reconciliation?companyCode=1000&plant=1000&fiscalYear=2026\n`,
+  );
 });
 
 module.exports = app;

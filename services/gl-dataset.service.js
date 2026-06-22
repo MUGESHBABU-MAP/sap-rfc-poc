@@ -34,7 +34,8 @@ class GLDatasetService {
    * Get GL balance records from FAGLFLEXT.
    * Only actual postings (RRCTY=0, RVERS=001).
    *
-   * @param {object} filters - { companyCode?, fiscalYear?, glAccount? }
+   * @param {object} filters - { companyCode?, fiscalYear?, glAccount?, inventoryAccounts? }
+   *   inventoryAccounts: string[] - filter to only these GL accounts (OR condition)
    * @param {number} rowCount - max rows to fetch (0 = all). Default 0.
    * @returns {Promise<GLBalanceRecord[]>}
    */
@@ -124,7 +125,10 @@ class GLDatasetService {
    * using AND keyword. Some SAP systems do not support multiple
    * OPTIONS rows as implicit AND (causes dynamic parsing error).
    *
-   * Returns: ["condition1 AND condition2 AND ..."]
+   * For inventoryAccounts (multiple accounts), uses IN syntax or
+   * splits into multiple OR calls if RFC_READ_TABLE doesn't support IN.
+   *
+   * Returns: string[] (each element is one OPTIONS row)
    */
   _buildWhere(filters) {
     const conditions = ["RRCTY = '0'", "RVERS = '001'"];
@@ -139,8 +143,60 @@ class GLDatasetService {
       conditions.push(`RACCT = '${filters.glAccount}'`);
     }
 
+    // Multiple inventory accounts: build OR condition
+    // RFC_READ_TABLE OPTIONS row has 72 char limit per row
+    // Use: RACCT IN ('acct1','acct2','acct3')
+    if (filters.inventoryAccounts && filters.inventoryAccounts.length > 0) {
+      const accounts = filters.inventoryAccounts;
+      // Build IN clause: RACCT IN ('x','y','z')
+      const inList = accounts.map((a) => `'${a}'`).join(",");
+      conditions.push(`RACCT IN (${inList})`);
+    }
+
     // Join all conditions with AND into a single OPTIONS row
-    return [conditions.join(" AND ")];
+    // NOTE: If the combined string exceeds 72 chars, RFC_READ_TABLE
+    // allows continuation on the next OPTIONS row
+    const combined = conditions.join(" AND ");
+
+    // RFC_READ_TABLE OPTIONS TEXT field is 72 chars max per row
+    // Split into multiple rows if needed (SAP concatenates them)
+    if (combined.length <= 72) {
+      return [combined];
+    }
+
+    // Split at AND boundaries to stay under 72 chars per row
+    return this._splitWhereRows(conditions);
+  }
+
+  /**
+   * Split conditions into multiple OPTIONS rows, each ≤72 chars.
+   * SAP concatenates OPTIONS rows with a space separator.
+   */
+  _splitWhereRows(conditions) {
+    const rows = [];
+    let current = "";
+
+    for (let i = 0; i < conditions.length; i++) {
+      const condition = conditions[i];
+      const prefix = current.length === 0 ? "" : " AND ";
+      const candidate = current + prefix + condition;
+
+      if (candidate.length <= 72) {
+        current = candidate;
+      } else {
+        if (current.length > 0) {
+          rows.push(current);
+        }
+        // Start new row with AND prefix (SAP concatenates rows)
+        current = "AND " + condition;
+      }
+    }
+
+    if (current.length > 0) {
+      rows.push(current);
+    }
+
+    return rows;
   }
 }
 
