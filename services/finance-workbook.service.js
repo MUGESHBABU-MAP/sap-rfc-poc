@@ -1,6 +1,7 @@
 const ExcelJS = require("exceljs");
 const path = require("path");
 const fs = require("fs");
+const { safeNum, safeStr } = require("../utils/safe-cell");
 
 const OUTPUT_DIR = path.resolve(__dirname, "../output");
 const accountMaster = require("../config/inventory-account-master.json");
@@ -82,19 +83,19 @@ class FinanceWorkbookService {
         });
       }
       const s = summaryMap.get(loc);
-      s.unrestrictedQty += r.unrestrictedQty;
-      s.unrestrictedValue += r.unrestrictedValue;
-      s.transitQty += r.transitQty;
-      s.transitValue += r.transitValue;
-      s.qualityQty += r.qualityQty;
-      s.qualityValue += r.qualityValue;
-      s.restrictedQty += r.restrictedQty;
-      s.restrictedValue += r.restrictedValue;
-      s.blockedQty += r.blockedQty;
-      s.blockedValue += r.blockedValue;
-      s.returnsQty += r.returnsQty;
-      s.returnsValue += r.returnsValue;
-      s.totalValue += r.totalInventoryValue;
+      s.unrestrictedQty += safeNum(r.unrestrictedQty);
+      s.unrestrictedValue += safeNum(r.unrestrictedValue);
+      s.transitQty += safeNum(r.transitQty);
+      s.transitValue += safeNum(r.transitValue);
+      s.qualityQty += safeNum(r.qualityQty);
+      s.qualityValue += safeNum(r.qualityValue);
+      s.restrictedQty += safeNum(r.restrictedQty);
+      s.restrictedValue += safeNum(r.restrictedValue);
+      s.blockedQty += safeNum(r.blockedQty);
+      s.blockedValue += safeNum(r.blockedValue);
+      s.returnsQty += safeNum(r.returnsQty);
+      s.returnsValue += safeNum(r.returnsValue);
+      s.totalValue += safeNum(r.totalInventoryValue);
       s.recordCount += 1;
     }
 
@@ -283,31 +284,31 @@ class FinanceWorkbookService {
     for (let i = 0; i < records.length; i++) {
       const r = records[i];
       const row = sheet.addRow({
-        material: r.material,
-        mtyp: r.materialType,
-        materialDescription: r.materialDescription,
-        matlGroup: r.materialGroup,
-        plnt: r.plant,
-        sloc: r.storageLocation,
-        s: r.specialStockIndicator || "",
+        material: safeStr(r.material),
+        mtyp: safeStr(r.materialType),
+        materialDescription: safeStr(r.materialDescription),
+        matlGroup: safeStr(r.materialGroup),
+        plnt: safeStr(r.plant),
+        sloc: safeStr(r.storageLocation),
+        s: safeStr(r.specialStockIndicator),
         valuation: "",
-        specialStockNo: r.specialStockNumber || "",
+        specialStockNo: safeStr(r.specialStockNumber),
         sl: "",
-        bun: r.baseUnit,
-        unrestricted: r.unrestrictedQty,
-        crcy: currency || "",
-        unrestrictedCost: r.standardCost,
-        valueUnrestricted: r.unrestrictedValue,
-        transit: r.transitQty,
-        valTransit: r.transitValue,
-        inQuality: r.qualityQty,
-        valueQuality: r.qualityValue,
-        restrictedUse: r.restrictedQty,
-        valueRestricted: r.restrictedValue,
-        blocked: r.blockedQty,
-        valueBlocked: r.blockedValue,
-        returns: r.returnsQty,
-        valueReturns: r.returnsValue,
+        bun: safeStr(r.baseUnit),
+        unrestricted: safeNum(r.unrestrictedQty),
+        crcy: safeStr(currency),
+        unrestrictedCost: safeNum(r.standardCost),
+        valueUnrestricted: safeNum(r.unrestrictedValue),
+        transit: safeNum(r.transitQty),
+        valTransit: safeNum(r.transitValue),
+        inQuality: safeNum(r.qualityQty),
+        valueQuality: safeNum(r.qualityValue),
+        restrictedUse: safeNum(r.restrictedQty),
+        valueRestricted: safeNum(r.restrictedValue),
+        blocked: safeNum(r.blockedQty),
+        valueBlocked: safeNum(r.blockedValue),
+        returns: safeNum(r.returnsQty),
+        valueReturns: safeNum(r.returnsValue),
       });
       row.commit();
     }
@@ -411,31 +412,31 @@ class FinanceWorkbookService {
     for (let i = 0; i < indices.length; i++) {
       const r = records[indices[i]];
       const row = sheet.addRow({
-        material: r.material,
-        mtyp: r.materialType,
-        materialDescription: r.materialDescription,
-        matlGroup: r.materialGroup,
-        plnt: r.plant,
-        sloc: r.storageLocation,
-        s: r.specialStockIndicator || "",
+        material: safeStr(r.material),
+        mtyp: safeStr(r.materialType),
+        materialDescription: safeStr(r.materialDescription),
+        matlGroup: safeStr(r.materialGroup),
+        plnt: safeStr(r.plant),
+        sloc: safeStr(r.storageLocation),
+        s: safeStr(r.specialStockIndicator),
         valuation: "",
-        specialStockNo: r.specialStockNumber || "",
+        specialStockNo: safeStr(r.specialStockNumber),
         sl: "",
-        bun: r.baseUnit,
-        unrestricted: r.unrestrictedQty,
-        crcy: currency || "",
-        unrestrictedCost: r.standardCost,
-        valueUnrestricted: r.unrestrictedValue,
-        transit: r.transitQty,
-        valTransit: r.transitValue,
-        inQuality: r.qualityQty,
-        valueQuality: r.qualityValue,
-        restrictedUse: r.restrictedQty,
-        valueRestricted: r.restrictedValue,
-        blocked: r.blockedQty,
-        valueBlocked: r.blockedValue,
-        returns: r.returnsQty,
-        valueReturns: r.returnsValue,
+        bun: safeStr(r.baseUnit),
+        unrestricted: safeNum(r.unrestrictedQty),
+        crcy: safeStr(currency),
+        unrestrictedCost: safeNum(r.standardCost),
+        valueUnrestricted: safeNum(r.unrestrictedValue),
+        transit: safeNum(r.transitQty),
+        valTransit: safeNum(r.transitValue),
+        inQuality: safeNum(r.qualityQty),
+        valueQuality: safeNum(r.qualityValue),
+        restrictedUse: safeNum(r.restrictedQty),
+        valueRestricted: safeNum(r.restrictedValue),
+        blocked: safeNum(r.blockedQty),
+        valueBlocked: safeNum(r.blockedValue),
+        returns: safeNum(r.returnsQty),
+        valueReturns: safeNum(r.returnsValue),
       });
       row.commit();
     }
@@ -459,38 +460,38 @@ class FinanceWorkbookService {
     for (let i = 0; i < indices.length; i++) {
       const r = records[indices[i]];
       const row = sheet.addRow({
-        material: r.material,
-        mtyp: r.materialType,
-        materialDescription: r.materialDescription,
-        matlGroup: r.materialGroup,
-        plnt: r.plant,
-        sloc: r.storageLocation,
-        s: r.specialStockIndicator || "",
+        material: safeStr(r.material),
+        mtyp: safeStr(r.materialType),
+        materialDescription: safeStr(r.materialDescription),
+        matlGroup: safeStr(r.materialGroup),
+        plnt: safeStr(r.plant),
+        sloc: safeStr(r.storageLocation),
+        s: safeStr(r.specialStockIndicator),
         valuation: "",
-        specialStockNo: r.specialStockNumber || "",
+        specialStockNo: safeStr(r.specialStockNumber),
         sl: "",
-        bun: r.baseUnit,
-        unrestricted: r.unrestrictedQty,
-        crcy: currency || "",
-        unrestrictedCost: r.standardCost,
-        valueUnrestricted: r.unrestrictedValue,
-        transit: r.transitQty,
-        valTransit: r.transitValue,
-        inQuality: r.qualityQty,
-        valueQuality: r.qualityValue,
-        restrictedUse: r.restrictedQty,
-        valueRestricted: r.restrictedValue,
-        blocked: r.blockedQty,
-        valueBlocked: r.blockedValue,
-        returns: r.returnsQty,
-        valueReturns: r.returnsValue,
+        bun: safeStr(r.baseUnit),
+        unrestricted: safeNum(r.unrestrictedQty),
+        crcy: safeStr(currency),
+        unrestrictedCost: safeNum(r.standardCost),
+        valueUnrestricted: safeNum(r.unrestrictedValue),
+        transit: safeNum(r.transitQty),
+        valTransit: safeNum(r.transitValue),
+        inQuality: safeNum(r.qualityQty),
+        valueQuality: safeNum(r.qualityValue),
+        restrictedUse: safeNum(r.restrictedQty),
+        valueRestricted: safeNum(r.restrictedValue),
+        blocked: safeNum(r.blockedQty),
+        valueBlocked: safeNum(r.blockedValue),
+        returns: safeNum(r.returnsQty),
+        valueReturns: safeNum(r.returnsValue),
       });
       row.commit();
-      totalQty += r.totalQuantity || 0;
-      totalValue += r.totalInventoryValue || 0;
+      totalQty += safeNum(r.totalQuantity);
+      totalValue += safeNum(r.totalInventoryValue);
     }
 
-    // Totals row
+    // Totals row — use consistent types (strings for text cols, numbers for numeric cols)
     const totalRow = sheet.addRow({
       material: `Records: ${indices.length}`,
       mtyp: "",
@@ -503,20 +504,20 @@ class FinanceWorkbookService {
       specialStockNo: `Total Value: ${r2(totalValue)}`,
       sl: "",
       bun: "",
-      unrestricted: "",
+      unrestricted: 0,
       crcy: "",
-      unrestrictedCost: "",
-      valueUnrestricted: "",
-      transit: "",
-      valTransit: "",
-      inQuality: "",
-      valueQuality: "",
-      restrictedUse: "",
-      valueRestricted: "",
-      blocked: "",
-      valueBlocked: "",
-      returns: "",
-      valueReturns: "",
+      unrestrictedCost: 0,
+      valueUnrestricted: 0,
+      transit: 0,
+      valTransit: 0,
+      inQuality: 0,
+      valueQuality: 0,
+      restrictedUse: 0,
+      valueRestricted: 0,
+      blocked: 0,
+      valueBlocked: 0,
+      returns: 0,
+      valueReturns: 0,
     });
     totalRow.commit();
     sheet.commit();
@@ -536,13 +537,13 @@ class FinanceWorkbookService {
     for (let i = 0; i < glRecords.length; i++) {
       const r = glRecords[i];
       const row = sheet.addRow({
-        cc: r.companyCode,
-        acct: r.glAccount,
-        year: r.fiscalYear,
-        period: r.period,
-        dc: r.debitCreditIndicator,
-        lcb: r.localCurrencyBalance,
-        tcb: r.transactionCurrencyBalance,
+        cc: safeStr(r.companyCode),
+        acct: safeStr(r.glAccount),
+        year: safeStr(r.fiscalYear),
+        period: safeStr(r.period),
+        dc: safeStr(r.debitCreditIndicator),
+        lcb: safeNum(r.localCurrencyBalance),
+        tcb: safeNum(r.transactionCurrencyBalance),
       });
       row.commit();
     }
@@ -605,12 +606,12 @@ class FinanceWorkbookService {
     for (let i = 0; i < plantRecon.length; i++) {
       const r = plantRecon[i];
       const row = sheet.addRow({
-        plant: r.plant,
-        inv: r.inventoryValue,
-        gl: r.glBalance,
-        var: r.variance,
-        pct: r.variancePercent,
-        status: r.status,
+        plant: safeStr(r.plant),
+        inv: safeNum(r.inventoryValue),
+        gl: safeNum(r.glBalance),
+        var: safeNum(r.variance),
+        pct: safeNum(r.variancePercent),
+        status: safeStr(r.status),
       });
       row.commit();
     }
@@ -631,13 +632,13 @@ class FinanceWorkbookService {
     for (let i = 0; i < locationRecon.length; i++) {
       const r = locationRecon[i];
       const row = sheet.addRow({
-        plant: r.plant,
-        sloc: r.storageLocation,
-        inv: r.inventoryValue,
-        gl: r.glBalance,
-        var: r.variance,
-        pct: r.variancePercent,
-        status: r.status,
+        plant: safeStr(r.plant),
+        sloc: safeStr(r.storageLocation),
+        inv: safeNum(r.inventoryValue),
+        gl: safeNum(r.glBalance),
+        var: safeNum(r.variance),
+        pct: safeNum(r.variancePercent),
+        status: safeStr(r.status),
       });
       row.commit();
     }
@@ -657,12 +658,12 @@ class FinanceWorkbookService {
     for (let i = 0; i < topVariances.length; i++) {
       const r = topVariances[i];
       const row = sheet.addRow({
-        plant: r.plant,
-        sloc: r.storageLocation,
-        inv: r.inventoryValue,
-        gl: r.glBalance,
-        var: r.variance,
-        pct: r.variancePercent,
+        plant: safeStr(r.plant),
+        sloc: safeStr(r.storageLocation),
+        inv: safeNum(r.inventoryValue),
+        gl: safeNum(r.glBalance),
+        var: safeNum(r.variance),
+        pct: safeNum(r.variancePercent),
       });
       row.commit();
     }
@@ -705,6 +706,8 @@ class FinanceWorkbookService {
 }
 
 function r2(val) {
+  if (val === undefined || val === null || isNaN(val) || !isFinite(val))
+    return 0;
   return Math.round(val * 100) / 100;
 }
 
