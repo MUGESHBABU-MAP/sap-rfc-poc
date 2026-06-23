@@ -100,6 +100,22 @@ class FinanceWorkbookService {
 
     const sortedLocations = [...locationMap.keys()].sort();
 
+    // --- Special Stock grouping (single pass already done, group by indicator) ---
+    const specialStockMap = new Map(); // Map<indicator, index[]>
+    specialStockMap.set("E", []);
+    specialStockMap.set("O", []);
+    specialStockMap.set("W", []);
+    specialStockMap.set("UNASSIGNED", []);
+
+    for (let i = 0; i < data.inventoryRecords.length; i++) {
+      const indicator = data.inventoryRecords[i].specialStockIndicator || "";
+      if (indicator === "E" || indicator === "O" || indicator === "W") {
+        specialStockMap.get(indicator).push(i);
+      } else {
+        specialStockMap.get("UNASSIGNED").push(i);
+      }
+    }
+
     // --- GL Summary aggregation ---
     const glSummaryMap = new Map();
     for (let i = 0; i < data.glRecords.length; i++) {
@@ -127,7 +143,13 @@ class FinanceWorkbookService {
     });
 
     // 1. Parameters
-    await this._writeParams(workbook, params, data, sortedLocations.length);
+    await this._writeParams(
+      workbook,
+      params,
+      data,
+      sortedLocations.length,
+      specialStockMap,
+    );
 
     // 2. Inventory Report
     await this._writeInventory(
@@ -152,19 +174,35 @@ class FinanceWorkbookService {
       );
     }
 
-    // 5. GL Detail
+    // 5. Special Stock Sheets (E, O, W, UNASSIGNED)
+    const ssOrder = ["E", "O", "W", "UNASSIGNED"];
+    for (let ss = 0; ss < ssOrder.length; ss++) {
+      const indicator = ssOrder[ss];
+      const indices = specialStockMap.get(indicator);
+      if (indices.length > 0) {
+        await this._writeSpecialStockSheet(
+          workbook,
+          data.inventoryRecords,
+          indices,
+          indicator,
+          params.currency,
+        );
+      }
+    }
+
+    // 6. GL Detail
     await this._writeGLDetail(workbook, data.glRecords);
 
-    // 6. GL Summary
+    // 7. GL Summary
     await this._writeGLSummary(workbook, glSummaryMap);
 
-    // 7. Plant Reconciliation
+    // 8. Plant Reconciliation
     await this._writePlantRecon(workbook, data.plantRecon);
 
-    // 8. Location Reconciliation
+    // 9. Location Reconciliation
     await this._writeLocationRecon(workbook, data.locationRecon);
 
-    // 9. Top Variances
+    // 10. Top Variances
     await this._writeTopVariances(workbook, data.topVariances);
 
     await workbook.commit();
@@ -188,7 +226,7 @@ class FinanceWorkbookService {
 
   // --- Sheet writers ---
 
-  async _writeParams(workbook, params, data, locationCount) {
+  async _writeParams(workbook, params, data, locationCount, specialStockMap) {
     const sheet = workbook.addWorksheet("Parameters");
     sheet.columns = [
       { header: "Parameter", key: "p", width: 22 },
@@ -204,7 +242,33 @@ class FinanceWorkbookService {
       { p: "Inventory Records", v: String(data.inventoryRecords.length) },
       { p: "GL Records", v: String(data.glRecords.length) },
       { p: "Location Count", v: String(locationCount) },
-      { p: "Version", v: "3.13.0" },
+      { p: "Version", v: "3.15.0" },
+      { p: "", v: "" },
+      { p: "--- Special Stock Distribution ---", v: "" },
+      {
+        p: "E (Sales Order Stock)",
+        v: String(specialStockMap.get("E").length),
+      },
+      {
+        p: "O (Vendor Consignment)",
+        v: String(specialStockMap.get("O").length),
+      },
+      {
+        p: "W (Customer Consignment)",
+        v: String(specialStockMap.get("W").length),
+      },
+      {
+        p: "UNASSIGNED (Normal)",
+        v: String(specialStockMap.get("UNASSIGNED").length),
+      },
+      {
+        p: "Total Special Stock Records",
+        v: String(
+          specialStockMap.get("E").length +
+            specialStockMap.get("O").length +
+            specialStockMap.get("W").length,
+        ),
+      },
     ];
     for (let i = 0; i < rows.length; i++) {
       const row = sheet.addRow(rows[i]);
@@ -225,9 +289,9 @@ class FinanceWorkbookService {
         matlGroup: r.materialGroup,
         plnt: r.plant,
         sloc: r.storageLocation,
-        s: "",
+        s: r.specialStockIndicator || "",
         valuation: "",
-        specialStockNo: "",
+        specialStockNo: r.specialStockNumber || "",
         sl: "",
         bun: r.baseUnit,
         unrestricted: r.unrestrictedQty,
@@ -353,9 +417,9 @@ class FinanceWorkbookService {
         matlGroup: r.materialGroup,
         plnt: r.plant,
         sloc: r.storageLocation,
-        s: "",
+        s: r.specialStockIndicator || "",
         valuation: "",
-        specialStockNo: "",
+        specialStockNo: r.specialStockNumber || "",
         sl: "",
         bun: r.baseUnit,
         unrestricted: r.unrestrictedQty,
@@ -375,6 +439,86 @@ class FinanceWorkbookService {
       });
       row.commit();
     }
+    sheet.commit();
+  }
+
+  async _writeSpecialStockSheet(
+    workbook,
+    records,
+    indices,
+    indicator,
+    currency,
+  ) {
+    const sheetName = indicator === "UNASSIGNED" ? "UNASSIGNED" : indicator;
+    const sheet = workbook.addWorksheet(sheetName);
+    sheet.columns = this._customerColumns();
+
+    let totalQty = 0;
+    let totalValue = 0;
+
+    for (let i = 0; i < indices.length; i++) {
+      const r = records[indices[i]];
+      const row = sheet.addRow({
+        material: r.material,
+        mtyp: r.materialType,
+        materialDescription: r.materialDescription,
+        matlGroup: r.materialGroup,
+        plnt: r.plant,
+        sloc: r.storageLocation,
+        s: r.specialStockIndicator || "",
+        valuation: "",
+        specialStockNo: r.specialStockNumber || "",
+        sl: "",
+        bun: r.baseUnit,
+        unrestricted: r.unrestrictedQty,
+        crcy: currency || "",
+        unrestrictedCost: r.standardCost,
+        valueUnrestricted: r.unrestrictedValue,
+        transit: r.transitQty,
+        valTransit: r.transitValue,
+        inQuality: r.qualityQty,
+        valueQuality: r.qualityValue,
+        restrictedUse: r.restrictedQty,
+        valueRestricted: r.restrictedValue,
+        blocked: r.blockedQty,
+        valueBlocked: r.blockedValue,
+        returns: r.returnsQty,
+        valueReturns: r.returnsValue,
+      });
+      row.commit();
+      totalQty += r.totalQuantity || 0;
+      totalValue += r.totalInventoryValue || 0;
+    }
+
+    // Totals row
+    const totalRow = sheet.addRow({
+      material: `Records: ${indices.length}`,
+      mtyp: "",
+      materialDescription: `Total Qty: ${r2(totalQty)}`,
+      matlGroup: "",
+      plnt: "",
+      sloc: "",
+      s: "",
+      valuation: "",
+      specialStockNo: `Total Value: ${r2(totalValue)}`,
+      sl: "",
+      bun: "",
+      unrestricted: "",
+      crcy: "",
+      unrestrictedCost: "",
+      valueUnrestricted: "",
+      transit: "",
+      valTransit: "",
+      inQuality: "",
+      valueQuality: "",
+      restrictedUse: "",
+      valueRestricted: "",
+      blocked: "",
+      valueBlocked: "",
+      returns: "",
+      valueReturns: "",
+    });
+    totalRow.commit();
     sheet.commit();
   }
 

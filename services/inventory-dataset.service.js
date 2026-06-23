@@ -82,6 +82,9 @@ class InventoryDatasetService {
     // MSLB + MSKU aggregated by MATNR + WERKS for returns
     const returnsMap = this._aggregateReturns(mslbRows, mskuRows);
 
+    // Special Stock Indicator + Number lookups (MSKA > MSLB > MSKU priority)
+    const specialStockMap = this._buildSpecialStockMap(mslbRows, mskuRows);
+
     // Join and produce InventoryRecord objects
     const records = [];
     for (let i = 0; i < mardRows.length; i++) {
@@ -109,6 +112,12 @@ class InventoryDatasetService {
       const returnsKey = `${matnr}|${werks}`;
       const returnsData = returnsMap[returnsKey] || { returnsQty: 0 };
       const returnsQty = returnsData.returnsQty;
+
+      // Special Stock Indicator + Number
+      const ssKey = `${matnr}|${werks}`;
+      const ssData = specialStockMap[ssKey] || { indicator: "", number: "" };
+      const specialStockIndicator = ssData.indicator;
+      const specialStockNumber = ssData.number;
 
       // Cost from MBEW
       const standardCost = parseFloat(mbew.STPRS) || 0;
@@ -151,6 +160,8 @@ class InventoryDatasetService {
         materialGroup: mara.MATKL || "",
         plant: werks,
         storageLocation: lgort,
+        specialStockIndicator,
+        specialStockNumber,
         baseUnit: mara.MEINS || "",
         unrestrictedQty,
         unrestrictedValue: round2(unrestrictedValue),
@@ -344,6 +355,37 @@ class InventoryDatasetService {
       if (!map[key]) map[key] = { returnsQty: 0 };
       map[key].returnsQty +=
         (parseFloat(row.KULAB) || 0) + (parseFloat(row.KUINS) || 0);
+    }
+
+    return map;
+  }
+
+  /**
+   * Build special stock indicator + number lookup by MATNR+WERKS.
+   * Priority: MSLB (O=vendor) > MSKU (W=customer)
+   * First non-blank SOBKZ wins for each material+plant.
+   */
+  _buildSpecialStockMap(mslbRows, mskuRows) {
+    const map = {};
+
+    // MSKU: W = customer consignment (lower priority, set first)
+    for (let i = 0; i < mskuRows.length; i++) {
+      const row = mskuRows[i];
+      const key = `${row.MATNR}|${row.WERKS}`;
+      const sobkz = row.SOBKZ || "";
+      if (sobkz && !map[key]) {
+        map[key] = { indicator: sobkz, number: row.KUNNR || "" };
+      }
+    }
+
+    // MSLB: O = vendor consignment/subcontracting (higher priority, overwrites)
+    for (let i = 0; i < mslbRows.length; i++) {
+      const row = mslbRows[i];
+      const key = `${row.MATNR}|${row.WERKS}`;
+      const sobkz = row.SOBKZ || "";
+      if (sobkz) {
+        map[key] = { indicator: sobkz, number: row.LIFNR || "" };
+      }
     }
 
     return map;

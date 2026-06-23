@@ -43,7 +43,8 @@
     "test-sobkz": "node tests/test-sobkz.js",
     "test-bwtar": "node tests/test-bwtar.js",
     "test-special-stock-number": "node tests/test-special-stock-number.js",
-    "test-gap-discovery": "node tests/test-gap-discovery.js"
+    "test-gap-discovery": "node tests/test-gap-discovery.js",
+    "test-special-stock-sheets": "node tests/test-special-stock-sheets.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
