@@ -2,6 +2,7 @@ const ExcelJS = require("exceljs");
 const path = require("path");
 const fs = require("fs");
 const { safeNum, safeStr } = require("../utils/safe-cell");
+const defaultConfig = require("../config/workbook.config");
 
 const OUTPUT_DIR = path.resolve(__dirname, "../output");
 const accountMaster = require("../config/inventory-account-master.json");
@@ -43,12 +44,23 @@ class FinanceWorkbookService {
    * @param {StorageLocationReconciliation[]} data.locationRecon
    * @param {TopVariance[]} data.topVariances
    * @param {object} params - { companyCode, plant, fiscalYear, period, currency }
-   * @returns {Promise<{filePath, sheetCount, executionTime, fileSizeMB}>}
+   * @param {object} [config] - overrides from workbook.config.js
+   * @returns {Promise<{filePath, sheetCount, executionTime, fileSizeMB}|{files, sheetCount, executionTime}>}
    */
-  async generateFinanceWorkbook(data, params) {
+  async generateFinanceWorkbook(data, params, config) {
+    const cfg = { ...defaultConfig, ...(config || {}) };
     const startTime = Date.now();
-    const { companyCode, plant, fiscalYear } = params;
 
+    // SPLIT mode generates separate workbooks
+    if (cfg.workbookMode === "SPLIT") {
+      return this._generateSplitWorkbooks(data, params, cfg, startTime);
+    }
+
+    return this._generateSingleWorkbook(data, params, cfg, startTime);
+  }
+
+  async _generateSingleWorkbook(data, params, cfg, startTime) {
+    const { plant, fiscalYear } = params;
     const filename = `Inventory_GL_Reconciliation_${plant}_${fiscalYear}.xlsx`;
     const filePath = path.join(OUTPUT_DIR, filename);
 
@@ -143,7 +155,10 @@ class FinanceWorkbookService {
       filename: filePath,
     });
 
-    // 1. Parameters
+    let sheetCount = 0;
+    const isSummaryOnly = cfg.detailMode === "SUMMARY_ONLY";
+
+    // 1. Parameters (always)
     await this._writeParams(
       workbook,
       params,
@@ -151,60 +166,91 @@ class FinanceWorkbookService {
       sortedLocations.length,
       specialStockMap,
     );
+    sheetCount++;
 
-    // 2. Inventory Report
-    await this._writeInventory(
-      workbook,
-      data.inventoryRecords,
-      params.currency,
-    );
-
-    // 3. Summary
-    await this._writeSummary(workbook, summaryMap, sortedLocations);
-
-    // 4. Location sheets
-    for (let l = 0; l < sortedLocations.length; l++) {
-      const loc = sortedLocations[l];
-      const indices = locationMap.get(loc);
-      await this._writeLocation(
+    // 2. Inventory Report (detail)
+    if (cfg.includeInventoryReport && !isSummaryOnly) {
+      await this._writeInventory(
         workbook,
         data.inventoryRecords,
-        indices,
-        loc,
         params.currency,
       );
+      sheetCount++;
     }
 
-    // 5. Special Stock Sheets (E, O, W, UNASSIGNED)
-    const ssOrder = ["E", "O", "W", "UNASSIGNED"];
-    for (let ss = 0; ss < ssOrder.length; ss++) {
-      const indicator = ssOrder[ss];
-      const indices = specialStockMap.get(indicator);
-      if (indices.length > 0) {
-        await this._writeSpecialStockSheet(
-          workbook,
-          data.inventoryRecords,
-          indices,
-          indicator,
-          params.currency,
-        );
+    // 3. Summary
+    if (cfg.includeSummary) {
+      await this._writeSummary(workbook, summaryMap, sortedLocations);
+      sheetCount++;
+    }
+
+    // 4. Location sheets (detail)
+    if (cfg.includeLocationSheets && !isSummaryOnly) {
+      const locsToGenerate = this._resolveLocations(sortedLocations, cfg);
+      for (let l = 0; l < locsToGenerate.length; l++) {
+        const loc = locsToGenerate[l];
+        const indices = locationMap.get(loc);
+        if (indices && indices.length > 0) {
+          await this._writeLocation(
+            workbook,
+            data.inventoryRecords,
+            indices,
+            loc,
+            params.currency,
+          );
+          sheetCount++;
+        }
       }
     }
 
-    // 6. GL Detail
-    await this._writeGLDetail(workbook, data.glRecords);
+    // 5. Special Stock Sheets (detail)
+    if (cfg.includeSpecialStockSheets && !isSummaryOnly) {
+      const ssOrder = ["E", "O", "W", "UNASSIGNED"];
+      for (let ss = 0; ss < ssOrder.length; ss++) {
+        const indicator = ssOrder[ss];
+        const indices = specialStockMap.get(indicator);
+        if (indices.length > 0) {
+          await this._writeSpecialStockSheet(
+            workbook,
+            data.inventoryRecords,
+            indices,
+            indicator,
+            params.currency,
+          );
+          sheetCount++;
+        }
+      }
+    }
+
+    // 6. GL Detail (detail)
+    if (cfg.includeGLDetail && !isSummaryOnly) {
+      await this._writeGLDetail(workbook, data.glRecords);
+      sheetCount++;
+    }
 
     // 7. GL Summary
-    await this._writeGLSummary(workbook, glSummaryMap);
+    if (cfg.includeGLSummary) {
+      await this._writeGLSummary(workbook, glSummaryMap);
+      sheetCount++;
+    }
 
     // 8. Plant Reconciliation
-    await this._writePlantRecon(workbook, data.plantRecon);
+    if (cfg.includePlantReconciliation) {
+      await this._writePlantRecon(workbook, data.plantRecon);
+      sheetCount++;
+    }
 
     // 9. Location Reconciliation
-    await this._writeLocationRecon(workbook, data.locationRecon);
+    if (cfg.includeLocationReconciliation) {
+      await this._writeLocationRecon(workbook, data.locationRecon);
+      sheetCount++;
+    }
 
     // 10. Top Variances
-    await this._writeTopVariances(workbook, data.topVariances);
+    if (cfg.includeTopVariances) {
+      await this._writeTopVariances(workbook, data.topVariances);
+      sheetCount++;
+    }
 
     await workbook.commit();
 
@@ -218,11 +264,230 @@ class FinanceWorkbookService {
 
     return {
       filePath,
-      sheetCount: 5 + sortedLocations.length + 4, // params+inv+summary + locations + gl detail+gl summary+plant recon+loc recon+top var
+      sheetCount,
       locationCount: sortedLocations.length,
       executionTime: parseFloat(executionTime),
       fileSizeMB: (fileSize / (1024 * 1024)).toFixed(2),
     };
+  }
+
+  /**
+   * SPLIT mode: generate three separate workbooks.
+   */
+  async _generateSplitWorkbooks(data, params, cfg, startTime) {
+    const { plant, fiscalYear } = params;
+    const files = [];
+
+    // Shared grouping
+    const {
+      locationMap,
+      summaryMap,
+      sortedLocations,
+      specialStockMap,
+      glSummaryMap,
+    } = this._groupData(data, cfg);
+
+    // Inventory workbook
+    const invFile = path.join(
+      OUTPUT_DIR,
+      `Inventory_${plant}_${fiscalYear}.xlsx`,
+    );
+    const invWb = new ExcelJS.stream.xlsx.WorkbookWriter({ filename: invFile });
+    await this._writeParams(
+      invWb,
+      params,
+      data,
+      sortedLocations.length,
+      specialStockMap,
+    );
+    if (cfg.includeInventoryReport)
+      await this._writeInventory(invWb, data.inventoryRecords, params.currency);
+    if (cfg.includeSummary)
+      await this._writeSummary(invWb, summaryMap, sortedLocations);
+    if (cfg.includeLocationSheets) {
+      const locs = this._resolveLocations(sortedLocations, cfg);
+      for (let l = 0; l < locs.length; l++) {
+        const indices = locationMap.get(locs[l]);
+        if (indices && indices.length > 0)
+          await this._writeLocation(
+            invWb,
+            data.inventoryRecords,
+            indices,
+            locs[l],
+            params.currency,
+          );
+      }
+    }
+    if (cfg.includeSpecialStockSheets) {
+      for (const ind of ["E", "O", "W", "UNASSIGNED"]) {
+        const indices = specialStockMap.get(ind);
+        if (indices.length > 0)
+          await this._writeSpecialStockSheet(
+            invWb,
+            data.inventoryRecords,
+            indices,
+            ind,
+            params.currency,
+          );
+      }
+    }
+    await invWb.commit();
+    files.push(invFile);
+
+    // GL workbook
+    const glFile = path.join(OUTPUT_DIR, `GL_${plant}_${fiscalYear}.xlsx`);
+    const glWb = new ExcelJS.stream.xlsx.WorkbookWriter({ filename: glFile });
+    await this._writeParams(
+      glWb,
+      params,
+      data,
+      sortedLocations.length,
+      specialStockMap,
+    );
+    if (cfg.includeGLDetail) await this._writeGLDetail(glWb, data.glRecords);
+    if (cfg.includeGLSummary) await this._writeGLSummary(glWb, glSummaryMap);
+    await glWb.commit();
+    files.push(glFile);
+
+    // Reconciliation workbook
+    const reconFile = path.join(
+      OUTPUT_DIR,
+      `Reconciliation_${plant}_${fiscalYear}.xlsx`,
+    );
+    const reconWb = new ExcelJS.stream.xlsx.WorkbookWriter({
+      filename: reconFile,
+    });
+    await this._writeParams(
+      reconWb,
+      params,
+      data,
+      sortedLocations.length,
+      specialStockMap,
+    );
+    if (cfg.includePlantReconciliation)
+      await this._writePlantRecon(reconWb, data.plantRecon);
+    if (cfg.includeLocationReconciliation)
+      await this._writeLocationRecon(reconWb, data.locationRecon);
+    if (cfg.includeTopVariances)
+      await this._writeTopVariances(reconWb, data.topVariances);
+    await reconWb.commit();
+    files.push(reconFile);
+
+    const executionTime = ((Date.now() - startTime) / 1000).toFixed(1);
+    return {
+      files,
+      sheetCount: files.length,
+      executionTime: parseFloat(executionTime),
+    };
+  }
+
+  /**
+   * Shared data grouping used by both SINGLE and SPLIT modes.
+   */
+  _groupData(data, cfg) {
+    const locationMap = new Map();
+    const summaryMap = new Map();
+    const specialStockMap = new Map();
+    specialStockMap.set("E", []);
+    specialStockMap.set("O", []);
+    specialStockMap.set("W", []);
+    specialStockMap.set("UNASSIGNED", []);
+
+    for (let i = 0; i < data.inventoryRecords.length; i++) {
+      const r = data.inventoryRecords[i];
+      const loc = r.storageLocation || "UNKNOWN";
+
+      if (!locationMap.has(loc)) locationMap.set(loc, []);
+      locationMap.get(loc).push(i);
+
+      if (!summaryMap.has(loc)) {
+        summaryMap.set(loc, {
+          location: loc,
+          unrestrictedQty: 0,
+          unrestrictedValue: 0,
+          transitQty: 0,
+          transitValue: 0,
+          qualityQty: 0,
+          qualityValue: 0,
+          restrictedQty: 0,
+          restrictedValue: 0,
+          blockedQty: 0,
+          blockedValue: 0,
+          returnsQty: 0,
+          returnsValue: 0,
+          totalValue: 0,
+          recordCount: 0,
+        });
+      }
+      const s = summaryMap.get(loc);
+      s.unrestrictedQty += safeNum(r.unrestrictedQty);
+      s.unrestrictedValue += safeNum(r.unrestrictedValue);
+      s.transitQty += safeNum(r.transitQty);
+      s.transitValue += safeNum(r.transitValue);
+      s.qualityQty += safeNum(r.qualityQty);
+      s.qualityValue += safeNum(r.qualityValue);
+      s.restrictedQty += safeNum(r.restrictedQty);
+      s.restrictedValue += safeNum(r.restrictedValue);
+      s.blockedQty += safeNum(r.blockedQty);
+      s.blockedValue += safeNum(r.blockedValue);
+      s.returnsQty += safeNum(r.returnsQty);
+      s.returnsValue += safeNum(r.returnsValue);
+      s.totalValue += safeNum(r.totalInventoryValue);
+      s.recordCount += 1;
+
+      const indicator = r.specialStockIndicator || "";
+      if (indicator === "E" || indicator === "O" || indicator === "W") {
+        specialStockMap.get(indicator).push(i);
+      } else {
+        specialStockMap.get("UNASSIGNED").push(i);
+      }
+    }
+
+    const sortedLocations = [...locationMap.keys()].sort();
+
+    const glSummaryMap = new Map();
+    for (let i = 0; i < data.glRecords.length; i++) {
+      const r = data.glRecords[i];
+      const acct = r.glAccount || "";
+      if (!glSummaryMap.has(acct))
+        glSummaryMap.set(acct, {
+          glAccount: acct,
+          balance: 0,
+          debit: 0,
+          credit: 0,
+          count: 0,
+        });
+      const g = glSummaryMap.get(acct);
+      g.balance += safeNum(r.cumulativeBalance);
+      if (r.debitCreditIndicator === "S")
+        g.debit += safeNum(r.cumulativeBalance);
+      else g.credit += safeNum(r.cumulativeBalance);
+      g.count += 1;
+    }
+
+    return {
+      locationMap,
+      summaryMap,
+      sortedLocations,
+      specialStockMap,
+      glSummaryMap,
+    };
+  }
+
+  /**
+   * Resolve which locations to generate based on config.
+   */
+  _resolveLocations(sortedLocations, cfg) {
+    if (cfg.locationMode === "NONE") return [];
+    if (
+      cfg.locationMode === "SELECTED" &&
+      cfg.selectedLocations &&
+      cfg.selectedLocations.length > 0
+    ) {
+      const selected = new Set(cfg.selectedLocations);
+      return sortedLocations.filter((loc) => selected.has(loc));
+    }
+    return sortedLocations; // ALL
   }
 
   // --- Sheet writers ---

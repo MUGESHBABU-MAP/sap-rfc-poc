@@ -164,15 +164,21 @@ app.get("/api/finance-workbook", async (req, res) => {
         period,
         currency: companyData.currency,
       },
+      buildWorkbookConfig(req.query),
     );
 
     console.log(
       `[FinanceWorkbook] Done: ${result.sheetCount} sheets, ${result.executionTime}s`,
     );
-    const filename = require("path").basename(result.filePath);
-    res.download(result.filePath, filename, (err) => {
-      if (err) console.error("Download error:", err.message);
-    });
+    if (result.filePath) {
+      const filename = require("path").basename(result.filePath);
+      res.download(result.filePath, filename, (err) => {
+        if (err) console.error("Download error:", err.message);
+      });
+    } else if (result.files) {
+      // SPLIT mode — return first file (or JSON with paths)
+      res.json({ success: true, data: result });
+    }
   } catch (err) {
     console.error("GET /api/finance-workbook error:", err.message);
     res.status(500).json({ success: false, error: err.message });
@@ -214,3 +220,42 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
+
+/**
+ * Build workbook config overrides from API query parameters.
+ * Only overrides values that are explicitly provided.
+ */
+function buildWorkbookConfig(query) {
+  const overrides = {};
+  if (query.detailMode) overrides.detailMode = query.detailMode;
+  if (query.locationMode) overrides.locationMode = query.locationMode;
+  if (query.workbookMode) overrides.workbookMode = query.workbookMode;
+  if (query.selectedLocations) {
+    overrides.selectedLocations = query.selectedLocations
+      .split(",")
+      .map((s) => s.trim());
+    overrides.locationMode = "SELECTED";
+  }
+  if (query.includeInventoryReport !== undefined)
+    overrides.includeInventoryReport = query.includeInventoryReport !== "false";
+  if (query.includeSummary !== undefined)
+    overrides.includeSummary = query.includeSummary !== "false";
+  if (query.includeLocationSheets !== undefined)
+    overrides.includeLocationSheets = query.includeLocationSheets !== "false";
+  if (query.includeSpecialStockSheets !== undefined)
+    overrides.includeSpecialStockSheets =
+      query.includeSpecialStockSheets !== "false";
+  if (query.includeGLDetail !== undefined)
+    overrides.includeGLDetail = query.includeGLDetail !== "false";
+  if (query.includeGLSummary !== undefined)
+    overrides.includeGLSummary = query.includeGLSummary !== "false";
+  if (query.includePlantReconciliation !== undefined)
+    overrides.includePlantReconciliation =
+      query.includePlantReconciliation !== "false";
+  if (query.includeLocationReconciliation !== undefined)
+    overrides.includeLocationReconciliation =
+      query.includeLocationReconciliation !== "false";
+  if (query.includeTopVariances !== undefined)
+    overrides.includeTopVariances = query.includeTopVariances !== "false";
+  return Object.keys(overrides).length > 0 ? overrides : undefined;
+}
