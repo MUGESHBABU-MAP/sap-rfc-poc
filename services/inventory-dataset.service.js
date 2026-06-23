@@ -3,7 +3,7 @@ const parseRows = require("../utils/parse-rows");
 /**
  * Inventory Dataset Service
  *
- * Reads MARD, MARA, MAKT, MARC, MBEW, MCHB, MSLB, MSKU from SAP,
+ * Reads MARD, MARA, MAKT, MARC, MBEW, MCHB, MSLB, MSKU, MSKA from SAP,
  * joins records using MATNR, and produces normalized InventoryRecord
  * objects matching the customer workbook.
  *
@@ -14,8 +14,9 @@ const parseRows = require("../utils/parse-rows");
  *   MARD  → StorageLocation, UnrestrictedQty, QualityQty, BlockedQty, TransitQty
  *   MBEW  → StandardCost, MovingAveragePrice
  *   MCHB  → Restricted-Use stock (batch level)
- *   MSLB  → Returns/Special stock with vendor
- *   MSKU  → Returns/Special stock with customer
+ *   MSLB  → Returns/Special stock with vendor (O)
+ *   MSKU  → Returns/Special stock with customer (W)
+ *   MSKA  → Sales Order Stock (E)
  */
 class InventoryDatasetService {
   constructor(sapService) {
@@ -70,6 +71,17 @@ class InventoryDatasetService {
       );
     }
 
+    // MSKA: Sales Order Stock (E)
+    let mskaRows = [];
+    try {
+      mskaRows = await this._readMSKA(filters);
+    } catch (err) {
+      console.warn(
+        "  [MSKA] Unavailable (sales order stock will be 0):",
+        err.message,
+      );
+    }
+
     // Build lookup maps
     const maraMap = this._buildMap(maraRows, "MATNR");
     const maktMap = this._buildMap(maktRows, "MATNR");
@@ -83,7 +95,11 @@ class InventoryDatasetService {
     const returnsMap = this._aggregateReturns(mslbRows, mskuRows);
 
     // Special Stock Indicator + Number lookups (MSKA > MSLB > MSKU priority)
-    const specialStockMap = this._buildSpecialStockMap(mslbRows, mskuRows);
+    const specialStockMap = this._buildSpecialStockMap(
+      mslbRows,
+      mskuRows,
+      mskaRows,
+    );
 
     // Join and produce InventoryRecord objects
     const records = [];
@@ -310,6 +326,19 @@ class InventoryDatasetService {
     return parseRows(result);
   }
 
+  async _readMSKA(filters) {
+    const fields = ["MATNR", "WERKS", "VBELN", "SOBKZ"];
+    const conditions = [];
+    if (filters.plant) conditions.push(`WERKS = '${filters.plant}'`);
+    if (filters.material) conditions.push(`MATNR = '${filters.material}'`);
+    const where = this._combineWhere(conditions);
+    console.log(
+      `  [MSKA] WHERE: ${where.length > 0 ? where.join(" ") : "(none)"}`,
+    );
+    const result = await this.sap.readTable("MSKA", fields, { where });
+    return parseRows(result);
+  }
+
   // --- Aggregation helpers ---
 
   /**
@@ -362,13 +391,13 @@ class InventoryDatasetService {
 
   /**
    * Build special stock indicator + number lookup by MATNR+WERKS.
-   * Priority: MSLB (O=vendor) > MSKU (W=customer)
-   * First non-blank SOBKZ wins for each material+plant.
+   * Priority: MSKA (E=sales order) > MSLB (O=vendor) > MSKU (W=customer)
+   * Highest priority overwrites lower.
    */
-  _buildSpecialStockMap(mslbRows, mskuRows) {
+  _buildSpecialStockMap(mslbRows, mskuRows, mskaRows) {
     const map = {};
 
-    // MSKU: W = customer consignment (lower priority, set first)
+    // MSKU: W = customer consignment (lowest priority, set first)
     for (let i = 0; i < mskuRows.length; i++) {
       const row = mskuRows[i];
       const key = `${row.MATNR}|${row.WERKS}`;
@@ -378,13 +407,23 @@ class InventoryDatasetService {
       }
     }
 
-    // MSLB: O = vendor consignment/subcontracting (higher priority, overwrites)
+    // MSLB: O = vendor consignment/subcontracting (medium priority, overwrites W)
     for (let i = 0; i < mslbRows.length; i++) {
       const row = mslbRows[i];
       const key = `${row.MATNR}|${row.WERKS}`;
       const sobkz = row.SOBKZ || "";
       if (sobkz) {
         map[key] = { indicator: sobkz, number: row.LIFNR || "" };
+      }
+    }
+
+    // MSKA: E = sales order stock (highest priority, overwrites O and W)
+    if (mskaRows) {
+      for (let i = 0; i < mskaRows.length; i++) {
+        const row = mskaRows[i];
+        const key = `${row.MATNR}|${row.WERKS}`;
+        const sobkz = row.SOBKZ || "E";
+        map[key] = { indicator: sobkz, number: row.VBELN || "" };
       }
     }
 
