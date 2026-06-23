@@ -39,7 +39,11 @@
     "test-gap-closure": "node tests/test-gap-closure.js",
     "test-customer-workbook": "node tests/test-customer-workbook.js",
     "test-finance-workbook": "node tests/test-finance-workbook.js",
-    "test-gl-account-filter": "node tests/test-gl-account-filter.js"
+    "test-gl-account-filter": "node tests/test-gl-account-filter.js",
+    "test-sobkz": "node tests/test-sobkz.js",
+    "test-bwtar": "node tests/test-bwtar.js",
+    "test-special-stock-number": "node tests/test-special-stock-number.js",
+    "test-gap-discovery": "node tests/test-gap-discovery.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
