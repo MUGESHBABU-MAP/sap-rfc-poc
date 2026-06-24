@@ -12,6 +12,7 @@ const FieldMappingService = require("./services/field-mapping.service");
 const CustomerWorkbookService = require("./services/customer-workbook.service");
 const CompanyService = require("./services/company.service");
 const FinanceWorkbookService = require("./services/finance-workbook.service");
+const AccountService = require("./services/account.service");
 
 // Route factories
 const inventoryRoutes = require("./routes/inventory.routes");
@@ -20,6 +21,7 @@ const reconciliationRoutes = require("./routes/reconciliation.routes");
 const exportRoutes = require("./routes/export.routes");
 const analysisRoutes = require("./routes/analysis.routes");
 const customerWorkbookRoutes = require("./routes/customer-workbook.routes");
+const accountRoutes = require("./routes/account.routes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -46,6 +48,7 @@ const fieldMapping = new FieldMappingService();
 const customerWorkbook = new CustomerWorkbookService();
 const companyService = new CompanyService(sap);
 const financeWorkbook = new FinanceWorkbookService();
+const accountService = new AccountService(sap);
 
 let sapConnected = false;
 
@@ -106,6 +109,7 @@ app.use(
   "/api/customer-workbook",
   customerWorkbookRoutes(inventoryDataset, customerWorkbook),
 );
+app.use("/api/accounts", accountRoutes(accountService));
 
 // --- Finance Reconciliation Workbook ---
 const accountMaster = require("./config/inventory-account-master.json");
@@ -132,13 +136,24 @@ app.get("/api/finance-workbook", async (req, res) => {
     const inventoryRecords = await inventoryDataset.getInventoryDataset({
       plant,
     });
-    const inventoryAccounts =
-      (accountMaster[companyCode] || {}).inventoryAccounts || [];
+
+    // Account selection: prefer selectedAccounts from query, fallback to hardcoded
+    let glAccountFilter;
+    if (req.query.selectedAccounts) {
+      glAccountFilter = req.query.selectedAccounts
+        .split(",")
+        .map((s) => s.trim());
+    } else {
+      const inventoryAccounts =
+        (accountMaster[companyCode] || {}).inventoryAccounts || [];
+      glAccountFilter =
+        inventoryAccounts.length > 0 ? inventoryAccounts : undefined;
+    }
+
     const glFilters = {
       companyCode,
       fiscalYear,
-      inventoryAccounts:
-        inventoryAccounts.length > 0 ? inventoryAccounts : undefined,
+      inventoryAccounts: glAccountFilter,
     };
     const glRecords = await glDataset.getGLBalances(glFilters);
     const plantRecon = reconciliation.reconcileByPlant(
@@ -214,6 +229,11 @@ app.listen(PORT, () => {
   console.log(
     `  GET /api/finance-workbook?companyCode=1000&plant=1000&fiscalYear=2026`,
   );
+  console.log(
+    `  GET /api/finance-workbook?companyCode=1000&plant=1000&fiscalYear=2026&selectedAccounts=0013000000,0013200000`,
+  );
+  console.log(`\nPhase 3.18A - Account Discovery:`);
+  console.log(`  GET /api/accounts?companyCode=1000`);
   console.log(`\nAnalysis:`);
   console.log(`  GET /api/analysis/field-mapping`);
   console.log(`  GET /api/analysis/field-mapping/gaps\n`);
