@@ -193,6 +193,10 @@ class InventoryDatasetService {
         returnsValue: round2(returnsValue),
         standardCost: round2(standardCost),
         movingAveragePrice: round2(movingAveragePrice),
+        unrestrictedStandardCost:
+          unrestrictedQty > 0
+            ? round2(unrestrictedValue / unrestrictedQty)
+            : null,
         totalQuantity,
         totalInventoryValue: round2(totalInventoryValue),
         valueDerived,
