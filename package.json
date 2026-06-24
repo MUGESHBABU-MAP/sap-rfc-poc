@@ -51,7 +51,8 @@
     "test-workbook-config": "node tests/test-workbook-config.js",
     "test-excel-limits": "node tests/test-excel-limits.js",
     "test-sheet-splitting": "node tests/test-sheet-splitting.js",
-    "test-account-service": "node tests/test-account-service.js"
+    "test-account-service": "node tests/test-account-service.js",
+    "test-account-analysis": "node tests/test-account-analysis.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
