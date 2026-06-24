@@ -3,6 +3,13 @@ const path = require("path");
 const fs = require("fs");
 const { safeNum, safeStr } = require("../utils/safe-cell");
 const defaultConfig = require("../config/workbook.config");
+const {
+  splitIntoChunks,
+  splitIndicesIntoChunks,
+  buildSplitSheetNames,
+  requiresSplitting,
+  SAFE_MAX_ROWS,
+} = require("../utils/excel-sheet-splitter");
 
 const OUTPUT_DIR = path.resolve(__dirname, "../output");
 const accountMaster = require("../config/inventory-account-master.json");
@@ -150,6 +157,56 @@ class FinanceWorkbookService {
       g.count += 1;
     }
 
+    // --- Track split sheet details ---
+    const splitSheetDetails = [];
+
+    // --- Pre-calculate split info for Parameters sheet ---
+    if (cfg.includeInventoryReport && cfg.detailMode !== "SUMMARY_ONLY") {
+      if (requiresSplitting(data.inventoryRecords.length)) {
+        const names = buildSplitSheetNames(
+          "Inventory Report",
+          data.inventoryRecords.length,
+        );
+        splitSheetDetails.push({
+          baseSheet: "Inventory Report",
+          generatedSheets: names.length,
+        });
+      }
+    }
+    if (cfg.includeLocationSheets && cfg.detailMode !== "SUMMARY_ONLY") {
+      const locsToCheck = this._resolveLocations(sortedLocations, cfg);
+      for (let l = 0; l < locsToCheck.length; l++) {
+        const loc = locsToCheck[l];
+        const indices = locationMap.get(loc);
+        if (indices && requiresSplitting(indices.length)) {
+          const names = buildSplitSheetNames(
+            loc.substring(0, 31),
+            indices.length,
+          );
+          splitSheetDetails.push({
+            baseSheet: loc,
+            generatedSheets: names.length,
+          });
+        }
+      }
+    }
+    if (cfg.includeSpecialStockSheets && cfg.detailMode !== "SUMMARY_ONLY") {
+      const ssOrder = ["E", "O", "W", "UNASSIGNED"];
+      for (let ss = 0; ss < ssOrder.length; ss++) {
+        const indicator = ssOrder[ss];
+        const indices = specialStockMap.get(indicator);
+        if (indices.length > 0 && requiresSplitting(indices.length)) {
+          const baseName =
+            indicator === "UNASSIGNED" ? "UNASSIGNED" : indicator;
+          const names = buildSplitSheetNames(baseName, indices.length);
+          splitSheetDetails.push({
+            baseSheet: baseName,
+            generatedSheets: names.length,
+          });
+        }
+      }
+    }
+
     // --- Streaming workbook ---
     const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
       filename: filePath,
@@ -165,59 +222,65 @@ class FinanceWorkbookService {
       data,
       sortedLocations.length,
       specialStockMap,
+      splitSheetDetails,
     );
     sheetCount++;
 
-    // 2. Inventory Report (detail)
+    // 2. Inventory Report (detail) — with automatic splitting
     if (cfg.includeInventoryReport && !isSummaryOnly) {
-      await this._writeInventory(
+      const written = await this._writeInventorySheets(
         workbook,
         data.inventoryRecords,
         params.currency,
       );
-      sheetCount++;
+      sheetCount += written;
     }
 
-    // 3. Summary
+    // 3. Summary (with worksheet distribution info)
     if (cfg.includeSummary) {
-      await this._writeSummary(workbook, summaryMap, sortedLocations);
+      await this._writeSummary(
+        workbook,
+        summaryMap,
+        sortedLocations,
+        splitSheetDetails,
+      );
       sheetCount++;
     }
 
-    // 4. Location sheets (detail)
+    // 4. Location sheets (detail) — with automatic splitting
     if (cfg.includeLocationSheets && !isSummaryOnly) {
       const locsToGenerate = this._resolveLocations(sortedLocations, cfg);
       for (let l = 0; l < locsToGenerate.length; l++) {
         const loc = locsToGenerate[l];
         const indices = locationMap.get(loc);
         if (indices && indices.length > 0) {
-          await this._writeLocation(
+          const written = await this._writeLocationSheets(
             workbook,
             data.inventoryRecords,
             indices,
             loc,
             params.currency,
           );
-          sheetCount++;
+          sheetCount += written;
         }
       }
     }
 
-    // 5. Special Stock Sheets (detail)
+    // 5. Special Stock Sheets (detail) — with automatic splitting
     if (cfg.includeSpecialStockSheets && !isSummaryOnly) {
       const ssOrder = ["E", "O", "W", "UNASSIGNED"];
       for (let ss = 0; ss < ssOrder.length; ss++) {
         const indicator = ssOrder[ss];
         const indices = specialStockMap.get(indicator);
         if (indices.length > 0) {
-          await this._writeSpecialStockSheet(
+          const written = await this._writeSpecialStockSheets(
             workbook,
             data.inventoryRecords,
             indices,
             indicator,
             params.currency,
           );
-          sheetCount++;
+          sheetCount += written;
         }
       }
     }
@@ -268,6 +331,12 @@ class FinanceWorkbookService {
       locationCount: sortedLocations.length,
       executionTime: parseFloat(executionTime),
       fileSizeMB: (fileSize / (1024 * 1024)).toFixed(2),
+      splitSheetsGenerated: splitSheetDetails.length > 0,
+      splitSheetCount: splitSheetDetails.reduce(
+        (sum, d) => sum + d.generatedSheets,
+        0,
+      ),
+      splitSheetDetails,
     };
   }
 
@@ -299,17 +368,22 @@ class FinanceWorkbookService {
       data,
       sortedLocations.length,
       specialStockMap,
+      [],
     );
     if (cfg.includeInventoryReport)
-      await this._writeInventory(invWb, data.inventoryRecords, params.currency);
+      await this._writeInventorySheets(
+        invWb,
+        data.inventoryRecords,
+        params.currency,
+      );
     if (cfg.includeSummary)
-      await this._writeSummary(invWb, summaryMap, sortedLocations);
+      await this._writeSummary(invWb, summaryMap, sortedLocations, []);
     if (cfg.includeLocationSheets) {
       const locs = this._resolveLocations(sortedLocations, cfg);
       for (let l = 0; l < locs.length; l++) {
         const indices = locationMap.get(locs[l]);
         if (indices && indices.length > 0)
-          await this._writeLocation(
+          await this._writeLocationSheets(
             invWb,
             data.inventoryRecords,
             indices,
@@ -322,7 +396,7 @@ class FinanceWorkbookService {
       for (const ind of ["E", "O", "W", "UNASSIGNED"]) {
         const indices = specialStockMap.get(ind);
         if (indices.length > 0)
-          await this._writeSpecialStockSheet(
+          await this._writeSpecialStockSheets(
             invWb,
             data.inventoryRecords,
             indices,
@@ -343,6 +417,7 @@ class FinanceWorkbookService {
       data,
       sortedLocations.length,
       specialStockMap,
+      [],
     );
     if (cfg.includeGLDetail) await this._writeGLDetail(glWb, data.glRecords);
     if (cfg.includeGLSummary) await this._writeGLSummary(glWb, glSummaryMap);
@@ -363,6 +438,7 @@ class FinanceWorkbookService {
       data,
       sortedLocations.length,
       specialStockMap,
+      [],
     );
     if (cfg.includePlantReconciliation)
       await this._writePlantRecon(reconWb, data.plantRecon);
@@ -492,7 +568,14 @@ class FinanceWorkbookService {
 
   // --- Sheet writers ---
 
-  async _writeParams(workbook, params, data, locationCount, specialStockMap) {
+  async _writeParams(
+    workbook,
+    params,
+    data,
+    locationCount,
+    specialStockMap,
+    splitDetails,
+  ) {
     const sheet = workbook.addWorksheet("Parameters");
     sheet.columns = [
       { header: "Parameter", key: "p", width: 22 },
@@ -508,7 +591,7 @@ class FinanceWorkbookService {
       { p: "Inventory Records", v: String(data.inventoryRecords.length) },
       { p: "GL Records", v: String(data.glRecords.length) },
       { p: "Location Count", v: String(locationCount) },
-      { p: "Version", v: "3.15.0" },
+      { p: "Version", v: "3.17B" },
       { p: "", v: "" },
       { p: "--- Special Stock Distribution ---", v: "" },
       {
@@ -535,6 +618,21 @@ class FinanceWorkbookService {
             specialStockMap.get("W").length,
         ),
       },
+      { p: "", v: "" },
+      { p: "--- Excel Row Limit Protection ---", v: "" },
+      { p: "Excel Safe Row Limit", v: String(SAFE_MAX_ROWS) },
+      {
+        p: "Split Sheets Generated",
+        v: splitDetails && splitDetails.length > 0 ? "YES" : "NO",
+      },
+      {
+        p: "Split Sheet Count",
+        v: String(
+          splitDetails
+            ? splitDetails.reduce((sum, d) => sum + d.generatedSheets, 0)
+            : 0,
+        ),
+      },
     ];
     for (let i = 0; i < rows.length; i++) {
       const row = sheet.addRow(rows[i]);
@@ -543,44 +641,60 @@ class FinanceWorkbookService {
     sheet.commit();
   }
 
-  async _writeInventory(workbook, records, currency) {
-    const sheet = workbook.addWorksheet("Inventory Report");
-    sheet.columns = this._customerColumns();
-    for (let i = 0; i < records.length; i++) {
-      const r = records[i];
-      const row = sheet.addRow({
-        material: safeStr(r.material),
-        mtyp: safeStr(r.materialType),
-        materialDescription: safeStr(r.materialDescription),
-        matlGroup: safeStr(r.materialGroup),
-        plnt: safeStr(r.plant),
-        sloc: safeStr(r.storageLocation),
-        s: safeStr(r.specialStockIndicator),
-        valuation: "",
-        specialStockNo: safeStr(r.specialStockNumber),
-        sl: "",
-        bun: safeStr(r.baseUnit),
-        unrestricted: safeNum(r.unrestrictedQty),
-        crcy: safeStr(currency),
-        unrestrictedCost: safeNum(r.standardCost),
-        valueUnrestricted: safeNum(r.unrestrictedValue),
-        transit: safeNum(r.transitQty),
-        valTransit: safeNum(r.transitValue),
-        inQuality: safeNum(r.qualityQty),
-        valueQuality: safeNum(r.qualityValue),
-        restrictedUse: safeNum(r.restrictedQty),
-        valueRestricted: safeNum(r.restrictedValue),
-        blocked: safeNum(r.blockedQty),
-        valueBlocked: safeNum(r.blockedValue),
-        returns: safeNum(r.returnsQty),
-        valueReturns: safeNum(r.returnsValue),
-      });
-      row.commit();
+  /**
+   * Write inventory report sheets with automatic splitting if needed.
+   * @returns {number} number of sheets written
+   */
+  async _writeInventorySheets(workbook, records, currency) {
+    const sheetNames = buildSplitSheetNames("Inventory Report", records.length);
+    const chunks = splitIntoChunks(records);
+
+    for (let c = 0; c < chunks.length; c++) {
+      const sheet = workbook.addWorksheet(sheetNames[c]);
+      sheet.columns = this._customerColumns();
+      const chunk = chunks[c];
+      for (let i = 0; i < chunk.length; i++) {
+        const r = chunk[i];
+        const row = sheet.addRow({
+          material: safeStr(r.material),
+          mtyp: safeStr(r.materialType),
+          materialDescription: safeStr(r.materialDescription),
+          matlGroup: safeStr(r.materialGroup),
+          plnt: safeStr(r.plant),
+          sloc: safeStr(r.storageLocation),
+          s: safeStr(r.specialStockIndicator),
+          valuation: "",
+          specialStockNo: safeStr(r.specialStockNumber),
+          sl: "",
+          bun: safeStr(r.baseUnit),
+          unrestricted: safeNum(r.unrestrictedQty),
+          crcy: safeStr(currency),
+          unrestrictedCost: safeNum(r.standardCost),
+          valueUnrestricted: safeNum(r.unrestrictedValue),
+          transit: safeNum(r.transitQty),
+          valTransit: safeNum(r.transitValue),
+          inQuality: safeNum(r.qualityQty),
+          valueQuality: safeNum(r.qualityValue),
+          restrictedUse: safeNum(r.restrictedQty),
+          valueRestricted: safeNum(r.restrictedValue),
+          blocked: safeNum(r.blockedQty),
+          valueBlocked: safeNum(r.blockedValue),
+          returns: safeNum(r.returnsQty),
+          valueReturns: safeNum(r.returnsValue),
+        });
+        row.commit();
+      }
+      sheet.commit();
     }
-    sheet.commit();
+    return sheetNames.length;
   }
 
-  async _writeSummary(workbook, summaryMap, sortedLocations) {
+  async _writeSummary(
+    workbook,
+    summaryMap,
+    sortedLocations,
+    splitSheetDetails,
+  ) {
     const sheet = workbook.addWorksheet("Summary");
     sheet.columns = [
       { header: "SLoc", key: "sloc", width: 8 },
@@ -668,124 +782,170 @@ class FinanceWorkbookService {
       cnt: gt.cnt,
     });
     totalRow.commit();
-    sheet.commit();
-  }
 
-  async _writeLocation(workbook, records, indices, loc, currency) {
-    const sheet = workbook.addWorksheet(loc.substring(0, 31));
-    sheet.columns = this._customerColumns();
-    for (let i = 0; i < indices.length; i++) {
-      const r = records[indices[i]];
-      const row = sheet.addRow({
-        material: safeStr(r.material),
-        mtyp: safeStr(r.materialType),
-        materialDescription: safeStr(r.materialDescription),
-        matlGroup: safeStr(r.materialGroup),
-        plnt: safeStr(r.plant),
-        sloc: safeStr(r.storageLocation),
-        s: safeStr(r.specialStockIndicator),
-        valuation: "",
-        specialStockNo: safeStr(r.specialStockNumber),
-        sl: "",
-        bun: safeStr(r.baseUnit),
-        unrestricted: safeNum(r.unrestrictedQty),
-        crcy: safeStr(currency),
-        unrestrictedCost: safeNum(r.standardCost),
-        valueUnrestricted: safeNum(r.unrestrictedValue),
-        transit: safeNum(r.transitQty),
-        valTransit: safeNum(r.transitValue),
-        inQuality: safeNum(r.qualityQty),
-        valueQuality: safeNum(r.qualityValue),
-        restrictedUse: safeNum(r.restrictedQty),
-        valueRestricted: safeNum(r.restrictedValue),
-        blocked: safeNum(r.blockedQty),
-        valueBlocked: safeNum(r.blockedValue),
-        returns: safeNum(r.returnsQty),
-        valueReturns: safeNum(r.returnsValue),
+    // Worksheet Distribution section (if any splits occurred)
+    if (splitSheetDetails && splitSheetDetails.length > 0) {
+      // Blank separator row
+      const sepRow = sheet.addRow({ sloc: "" });
+      sepRow.commit();
+      const headerRow = sheet.addRow({
+        sloc: "--- Worksheet Distribution ---",
       });
-      row.commit();
+      headerRow.commit();
+      for (let i = 0; i < splitSheetDetails.length; i++) {
+        const detail = splitSheetDetails[i];
+        const names = buildSplitSheetNames(
+          detail.baseSheet.substring(0, 31),
+          detail.generatedSheets * SAFE_MAX_ROWS,
+        );
+        for (let n = 0; n < names.length; n++) {
+          const distRow = sheet.addRow({ sloc: names[n] });
+          distRow.commit();
+        }
+      }
     }
+
     sheet.commit();
   }
 
-  async _writeSpecialStockSheet(
+  /**
+   * Write location sheet(s) with automatic splitting if needed.
+   * @returns {number} number of sheets written
+   */
+  async _writeLocationSheets(workbook, records, indices, loc, currency) {
+    const baseName = loc.substring(0, 31);
+    const sheetNames = buildSplitSheetNames(baseName, indices.length);
+    const indexChunks = splitIndicesIntoChunks(indices);
+
+    for (let c = 0; c < indexChunks.length; c++) {
+      const sheet = workbook.addWorksheet(sheetNames[c]);
+      sheet.columns = this._customerColumns();
+      const chunk = indexChunks[c];
+      for (let i = 0; i < chunk.length; i++) {
+        const r = records[chunk[i]];
+        const row = sheet.addRow({
+          material: safeStr(r.material),
+          mtyp: safeStr(r.materialType),
+          materialDescription: safeStr(r.materialDescription),
+          matlGroup: safeStr(r.materialGroup),
+          plnt: safeStr(r.plant),
+          sloc: safeStr(r.storageLocation),
+          s: safeStr(r.specialStockIndicator),
+          valuation: "",
+          specialStockNo: safeStr(r.specialStockNumber),
+          sl: "",
+          bun: safeStr(r.baseUnit),
+          unrestricted: safeNum(r.unrestrictedQty),
+          crcy: safeStr(currency),
+          unrestrictedCost: safeNum(r.standardCost),
+          valueUnrestricted: safeNum(r.unrestrictedValue),
+          transit: safeNum(r.transitQty),
+          valTransit: safeNum(r.transitValue),
+          inQuality: safeNum(r.qualityQty),
+          valueQuality: safeNum(r.qualityValue),
+          restrictedUse: safeNum(r.restrictedQty),
+          valueRestricted: safeNum(r.restrictedValue),
+          blocked: safeNum(r.blockedQty),
+          valueBlocked: safeNum(r.blockedValue),
+          returns: safeNum(r.returnsQty),
+          valueReturns: safeNum(r.returnsValue),
+        });
+        row.commit();
+      }
+      sheet.commit();
+    }
+    return sheetNames.length;
+  }
+
+  /**
+   * Write special stock sheet(s) with automatic splitting if needed.
+   * @returns {number} number of sheets written
+   */
+  async _writeSpecialStockSheets(
     workbook,
     records,
     indices,
     indicator,
     currency,
   ) {
-    const sheetName = indicator === "UNASSIGNED" ? "UNASSIGNED" : indicator;
-    const sheet = workbook.addWorksheet(sheetName);
-    sheet.columns = this._customerColumns();
+    const baseName = indicator === "UNASSIGNED" ? "UNASSIGNED" : indicator;
+    const sheetNames = buildSplitSheetNames(baseName, indices.length);
+    const indexChunks = splitIndicesIntoChunks(indices);
 
-    let totalQty = 0;
-    let totalValue = 0;
+    for (let c = 0; c < indexChunks.length; c++) {
+      const sheet = workbook.addWorksheet(sheetNames[c]);
+      sheet.columns = this._customerColumns();
+      const chunk = indexChunks[c];
 
-    for (let i = 0; i < indices.length; i++) {
-      const r = records[indices[i]];
-      const row = sheet.addRow({
-        material: safeStr(r.material),
-        mtyp: safeStr(r.materialType),
-        materialDescription: safeStr(r.materialDescription),
-        matlGroup: safeStr(r.materialGroup),
-        plnt: safeStr(r.plant),
-        sloc: safeStr(r.storageLocation),
-        s: safeStr(r.specialStockIndicator),
+      let totalQty = 0;
+      let totalValue = 0;
+
+      for (let i = 0; i < chunk.length; i++) {
+        const r = records[chunk[i]];
+        const row = sheet.addRow({
+          material: safeStr(r.material),
+          mtyp: safeStr(r.materialType),
+          materialDescription: safeStr(r.materialDescription),
+          matlGroup: safeStr(r.materialGroup),
+          plnt: safeStr(r.plant),
+          sloc: safeStr(r.storageLocation),
+          s: safeStr(r.specialStockIndicator),
+          valuation: "",
+          specialStockNo: safeStr(r.specialStockNumber),
+          sl: "",
+          bun: safeStr(r.baseUnit),
+          unrestricted: safeNum(r.unrestrictedQty),
+          crcy: safeStr(currency),
+          unrestrictedCost: safeNum(r.standardCost),
+          valueUnrestricted: safeNum(r.unrestrictedValue),
+          transit: safeNum(r.transitQty),
+          valTransit: safeNum(r.transitValue),
+          inQuality: safeNum(r.qualityQty),
+          valueQuality: safeNum(r.qualityValue),
+          restrictedUse: safeNum(r.restrictedQty),
+          valueRestricted: safeNum(r.restrictedValue),
+          blocked: safeNum(r.blockedQty),
+          valueBlocked: safeNum(r.blockedValue),
+          returns: safeNum(r.returnsQty),
+          valueReturns: safeNum(r.returnsValue),
+        });
+        row.commit();
+        totalQty += safeNum(r.totalQuantity);
+        totalValue += safeNum(r.totalInventoryValue);
+      }
+
+      // Totals row
+      const totalRow = sheet.addRow({
+        material: `Records: ${chunk.length}`,
+        mtyp: "",
+        materialDescription: `Total Qty: ${r2(totalQty)}`,
+        matlGroup: "",
+        plnt: "",
+        sloc: "",
+        s: "",
         valuation: "",
-        specialStockNo: safeStr(r.specialStockNumber),
+        specialStockNo: `Total Value: ${r2(totalValue)}`,
         sl: "",
-        bun: safeStr(r.baseUnit),
-        unrestricted: safeNum(r.unrestrictedQty),
-        crcy: safeStr(currency),
-        unrestrictedCost: safeNum(r.standardCost),
-        valueUnrestricted: safeNum(r.unrestrictedValue),
-        transit: safeNum(r.transitQty),
-        valTransit: safeNum(r.transitValue),
-        inQuality: safeNum(r.qualityQty),
-        valueQuality: safeNum(r.qualityValue),
-        restrictedUse: safeNum(r.restrictedQty),
-        valueRestricted: safeNum(r.restrictedValue),
-        blocked: safeNum(r.blockedQty),
-        valueBlocked: safeNum(r.blockedValue),
-        returns: safeNum(r.returnsQty),
-        valueReturns: safeNum(r.returnsValue),
+        bun: "",
+        unrestricted: 0,
+        crcy: "",
+        unrestrictedCost: 0,
+        valueUnrestricted: 0,
+        transit: 0,
+        valTransit: 0,
+        inQuality: 0,
+        valueQuality: 0,
+        restrictedUse: 0,
+        valueRestricted: 0,
+        blocked: 0,
+        valueBlocked: 0,
+        returns: 0,
+        valueReturns: 0,
       });
-      row.commit();
-      totalQty += safeNum(r.totalQuantity);
-      totalValue += safeNum(r.totalInventoryValue);
+      totalRow.commit();
+      sheet.commit();
     }
-
-    // Totals row — use consistent types (strings for text cols, numbers for numeric cols)
-    const totalRow = sheet.addRow({
-      material: `Records: ${indices.length}`,
-      mtyp: "",
-      materialDescription: `Total Qty: ${r2(totalQty)}`,
-      matlGroup: "",
-      plnt: "",
-      sloc: "",
-      s: "",
-      valuation: "",
-      specialStockNo: `Total Value: ${r2(totalValue)}`,
-      sl: "",
-      bun: "",
-      unrestricted: 0,
-      crcy: "",
-      unrestrictedCost: 0,
-      valueUnrestricted: 0,
-      transit: 0,
-      valTransit: 0,
-      inQuality: 0,
-      valueQuality: 0,
-      restrictedUse: 0,
-      valueRestricted: 0,
-      blocked: 0,
-      valueBlocked: 0,
-      returns: 0,
-      valueReturns: 0,
-    });
-    totalRow.commit();
-    sheet.commit();
+    return sheetNames.length;
   }
 
   async _writeGLDetail(workbook, glRecords) {

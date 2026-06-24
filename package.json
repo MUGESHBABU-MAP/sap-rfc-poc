@@ -49,7 +49,8 @@
     "test-mska-join": "node tests/test-mska-join.js",
     "test-workbook-integrity": "node tests/test-workbook-integrity.js",
     "test-workbook-config": "node tests/test-workbook-config.js",
-    "test-excel-limits": "node tests/test-excel-limits.js"
+    "test-excel-limits": "node tests/test-excel-limits.js",
+    "test-sheet-splitting": "node tests/test-sheet-splitting.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
