@@ -13,6 +13,8 @@ const CustomerWorkbookService = require("./services/customer-workbook.service");
 const CompanyService = require("./services/company.service");
 const FinanceWorkbookService = require("./services/finance-workbook.service");
 const AccountService = require("./services/account.service");
+const RunConfigurationService = require("./services/run-configuration.service");
+const AuditTrailService = require("./services/audit-trail.service");
 
 // Route factories
 const inventoryRoutes = require("./routes/inventory.routes");
@@ -22,6 +24,7 @@ const exportRoutes = require("./routes/export.routes");
 const analysisRoutes = require("./routes/analysis.routes");
 const customerWorkbookRoutes = require("./routes/customer-workbook.routes");
 const accountRoutes = require("./routes/account.routes");
+const runHistoryRoutes = require("./routes/run-history.routes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -49,6 +52,8 @@ const customerWorkbook = new CustomerWorkbookService();
 const companyService = new CompanyService(sap);
 const financeWorkbook = new FinanceWorkbookService();
 const accountService = new AccountService(sap);
+const runConfigService = new RunConfigurationService();
+const auditTrail = new AuditTrailService();
 
 let sapConnected = false;
 
@@ -110,10 +115,14 @@ app.use(
   customerWorkbookRoutes(inventoryDataset, customerWorkbook),
 );
 app.use("/api/accounts", accountRoutes(accountService));
+app.use("/api/run-history", runHistoryRoutes(auditTrail));
 
 // --- Finance Reconciliation Workbook ---
 const accountMaster = require("./config/inventory-account-master.json");
 app.get("/api/finance-workbook", async (req, res) => {
+  let runConfig = null;
+  const runStartTime = Date.now();
+
   try {
     if (!req.query.companyCode || !req.query.plant) {
       return res.status(400).json({
@@ -123,13 +132,16 @@ app.get("/api/finance-workbook", async (req, res) => {
       });
     }
 
-    const companyCode = req.query.companyCode;
-    const plant = req.query.plant;
-    const fiscalYear = req.query.fiscalYear || undefined;
-    const period = req.query.period || "ALL";
+    // Build run configuration (backward compatible with legacy query params)
+    runConfig = runConfigService.fromQueryParams(req.query);
+
+    const companyCode = runConfig.companyCode;
+    const plant = runConfig.plant;
+    const fiscalYear = runConfig.fiscalYear;
+    const period = runConfig.fiscalPeriod;
 
     console.log(
-      `[FinanceWorkbook] cc=${companyCode} plant=${plant} year=${fiscalYear}`,
+      `[FinanceWorkbook] runId=${runConfig.runId} cc=${companyCode} plant=${plant} year=${fiscalYear}`,
     );
 
     const companyData = await companyService.getCompanyCurrency(companyCode);
@@ -137,12 +149,10 @@ app.get("/api/finance-workbook", async (req, res) => {
       plant,
     });
 
-    // Account selection: prefer selectedAccounts from query, fallback to hardcoded
+    // Account selection: prefer selectedAccounts from run config, fallback to hardcoded
     let glAccountFilter;
-    if (req.query.selectedAccounts) {
-      glAccountFilter = req.query.selectedAccounts
-        .split(",")
-        .map((s) => s.trim());
+    if (runConfig.selectedAccounts.length > 0) {
+      glAccountFilter = runConfig.selectedAccounts;
     } else {
       const inventoryAccounts =
         (accountMaster[companyCode] || {}).inventoryAccounts || [];
@@ -170,6 +180,11 @@ app.get("/api/finance-workbook", async (req, res) => {
       100,
     );
 
+    const wbConfig =
+      Object.keys(runConfig.workbookConfig).length > 0
+        ? runConfig.workbookConfig
+        : buildWorkbookConfig(req.query);
+
     const result = await financeWorkbook.generateFinanceWorkbook(
       { inventoryRecords, glRecords, plantRecon, locationRecon, topVariances },
       {
@@ -179,8 +194,38 @@ app.get("/api/finance-workbook", async (req, res) => {
         period,
         currency: companyData.currency,
       },
-      buildWorkbookConfig(req.query),
+      wbConfig,
     );
+
+    // Log successful run to audit trail
+    const totalInvValue = inventoryRecords.reduce(
+      (sum, r) => sum + (r.totalInventoryValue || 0),
+      0,
+    );
+    const totalGlValue = glRecords.reduce(
+      (sum, r) => sum + (r.cumulativeBalance || 0),
+      0,
+    );
+    auditTrail.logRun({
+      runId: runConfig.runId,
+      runName: runConfig.runName,
+      user: runConfig.triggeredBy,
+      timestamp: new Date().toISOString(),
+      companyCode,
+      plant,
+      fiscalYear,
+      fiscalPeriod: period,
+      selectedAccounts: glAccountFilter || [],
+      inventoryRecords: inventoryRecords.length,
+      glRecords: glRecords.length,
+      inventoryValue: Math.round(totalInvValue * 100) / 100,
+      glValue: Math.round(totalGlValue * 100) / 100,
+      varianceAmount: Math.round((totalInvValue - totalGlValue) * 100) / 100,
+      exceptionCount: topVariances.length,
+      workbookPath: result.filePath || (result.files ? result.files[0] : ""),
+      executionTimeSeconds: result.executionTime,
+      status: "SUCCESS",
+    });
 
     console.log(
       `[FinanceWorkbook] Done: ${result.sheetCount} sheets, ${result.executionTime}s`,
@@ -195,6 +240,23 @@ app.get("/api/finance-workbook", async (req, res) => {
       res.json({ success: true, data: result });
     }
   } catch (err) {
+    // Log failed run to audit trail
+    if (runConfig) {
+      auditTrail.logRun({
+        runId: runConfig.runId,
+        runName: runConfig.runName,
+        user: runConfig.triggeredBy,
+        timestamp: new Date().toISOString(),
+        companyCode: runConfig.companyCode,
+        plant: runConfig.plant,
+        fiscalYear: runConfig.fiscalYear,
+        fiscalPeriod: runConfig.fiscalPeriod,
+        selectedAccounts: runConfig.selectedAccounts,
+        executionTimeSeconds: ((Date.now() - runStartTime) / 1000).toFixed(1),
+        status: "FAILED",
+        errorMessage: err.message,
+      });
+    }
     console.error("GET /api/finance-workbook error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
@@ -234,6 +296,9 @@ app.listen(PORT, () => {
   );
   console.log(`\nPhase 3.18A - Account Discovery:`);
   console.log(`  GET /api/accounts?companyCode=1000`);
+  console.log(`\nPhase 3.19/3.20 - Run History & Audit:`);
+  console.log(`  GET /api/run-history`);
+  console.log(`  GET /api/run-history/:runId`);
   console.log(`\nAnalysis:`);
   console.log(`  GET /api/analysis/field-mapping`);
   console.log(`  GET /api/analysis/field-mapping/gaps\n`);

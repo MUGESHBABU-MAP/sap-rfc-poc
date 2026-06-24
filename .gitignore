@@ -61,6 +61,9 @@ desktop.ini
 output/
 reports/
 
+# Audit trail data
+data/
+
 # RFC test results
 *.csv
 *.xlsx
