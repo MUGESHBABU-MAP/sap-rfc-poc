@@ -55,7 +55,8 @@
     "test-account-analysis": "node tests/test-account-analysis.js",
     "test-run-configuration": "node tests/test-run-configuration.js",
     "test-audit-trail": "node tests/test-audit-trail.js",
-    "test-standard-cost-validation": "node tests/test-standard-cost-validation.js"
+    "test-standard-cost-validation": "node tests/test-standard-cost-validation.js",
+    "test-companycode-plant-mapping": "node tests/test-companycode-plant-mapping.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
