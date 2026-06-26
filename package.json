@@ -57,7 +57,8 @@
     "test-audit-trail": "node tests/test-audit-trail.js",
     "test-standard-cost-validation": "node tests/test-standard-cost-validation.js",
     "test-companycode-plant-mapping": "node tests/test-companycode-plant-mapping.js",
-    "test-organizational-mapping": "node tests/test-organizational-mapping.js"
+    "test-organizational-mapping": "node tests/test-organizational-mapping.js",
+    "test-gl-organizational-dimension": "node tests/test-gl-organizational-dimension.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
