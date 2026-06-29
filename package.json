@@ -59,7 +59,9 @@
     "test-companycode-plant-mapping": "node tests/test-companycode-plant-mapping.js",
     "test-organizational-mapping": "node tests/test-organizational-mapping.js",
     "test-gl-organizational-dimension": "node tests/test-gl-organizational-dimension.js",
-    "test-faglb03-balance-formula": "node tests/test-faglb03-balance-formula.js"
+    "test-faglb03-balance-formula": "node tests/test-faglb03-balance-formula.js",
+    "mcp-server": "node mcp/server.js",
+    "test-mcp": "node mcp/test-mcp.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
