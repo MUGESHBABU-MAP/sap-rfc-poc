@@ -61,7 +61,8 @@
     "test-gl-organizational-dimension": "node tests/test-gl-organizational-dimension.js",
     "test-faglb03-balance-formula": "node tests/test-faglb03-balance-formula.js",
     "mcp-server": "node mcp/server.js",
-    "test-mcp": "node mcp/test-mcp.js"
+    "test-mcp": "node mcp/test-mcp.js",
+    "test-mcp-protocol": "node mcp/tests/test-mcp-protocol.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

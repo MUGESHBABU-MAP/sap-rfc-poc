@@ -1,29 +1,47 @@
 /**
- * MCP Server (Phase 4)
+ * MCP Server (Phase 4.1)
  *
- * JSON-RPC 2.0 server implementing MCP protocol.
- * Thin integration layer over existing services.
+ * HTTP-based MCP server using Express.
+ * Implements MCP protocol (JSON-RPC 2.0) over HTTP POST /mcp.
  *
- * Supports:
- *   - initialize
- *   - tools/list
- *   - tools/call
+ * Architecture:
+ *   Express → HTTP Transport → Request Handler → Tool Registry → Services → SAP
+ *
+ * NOTE: Official @modelcontextprotocol/sdk requires Node 18+ and ESM modules.
+ * This project requires Node 14 + CommonJS (node-rfc dependency).
+ * This server implements the same MCP protocol interface manually,
+ * producing identical JSON-RPC responses that any MCP client can consume.
  *
  * Start: node mcp/server.js
+ * Endpoint: POST http://localhost:{MCP_PORT}/mcp
  */
+require("dotenv").config({
+  path: require("path").resolve(__dirname, "../.env"),
+});
+
+const express = require("express");
 const { createContext } = require("./context");
-const { getTool, getToolDefinitions } = require("./registry");
+const { createHttpTransport } = require("./transport/httpTransport");
+const {
+  buildToolDefinitions,
+  executeTool,
+  ToolNotFoundError,
+} = require("./registration/registerTools");
+const { authMiddleware, isAuthEnabled } = require("./auth/authProvider");
+
+const MCP_PORT = parseInt(process.env.MCP_PORT) || 3001;
+const MCP_HOST = process.env.MCP_HOST || "0.0.0.0";
 
 const SERVER_INFO = {
   name: "inventory-gl-reconciliation",
-  version: "4.0.0",
-  description: "Inventory & GL Reconciliation MCP Server",
+  version: "4.1.0",
+  description: "Inventory & GL Reconciliation MCP Server (HTTP Transport)",
 };
 
 let context = null;
 
 /**
- * Handle a JSON-RPC request.
+ * Handle a JSON-RPC MCP request.
  * @param {object} request - { jsonrpc, id, method, params }
  * @returns {object} JSON-RPC response
  */
@@ -39,8 +57,12 @@ async function handleRequest(request) {
           serverInfo: SERVER_INFO,
         });
 
+      case "notifications/initialized":
+        // Client notification — no response needed
+        return null;
+
       case "tools/list":
-        return jsonRpcSuccess(id, { tools: getToolDefinitions() });
+        return jsonRpcSuccess(id, { tools: buildToolDefinitions() });
 
       case "tools/call":
         return await handleToolCall(id, params);
@@ -63,8 +85,9 @@ async function handleToolCall(id, params) {
     return jsonRpcError(id, -32602, "Missing tool name");
   }
 
-  const tool = getTool(name);
-  if (!tool) {
+  // Check tool exists BEFORE attempting SAP connection
+  const { getTool } = require("./registry");
+  if (!getTool(name)) {
     return jsonRpcError(id, -32602, `Unknown tool: ${name}`);
   }
 
@@ -73,22 +96,42 @@ async function handleToolCall(id, params) {
     context = createContext();
   }
   if (!context.connected) {
-    await context.connect();
+    try {
+      await context.connect();
+    } catch (err) {
+      return jsonRpcSuccess(id, {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              success: false,
+              error: { code: "SAP_CONNECTION_FAILED", message: err.message },
+            }),
+          },
+        ],
+        isError: true,
+      });
+    }
   }
 
   const startTime = Date.now();
   try {
-    const result = await tool.handler(args || {}, context);
+    const result = await executeTool(name, args || {}, context);
     const elapsed = Date.now() - startTime;
-    logCall(name, elapsed, true);
+    log("INFO", `${name} | ${elapsed}ms | OK`);
 
     return jsonRpcSuccess(id, {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     });
   } catch (err) {
     const elapsed = Date.now() - startTime;
-    logCall(name, elapsed, false, err.message);
 
+    if (err instanceof ToolNotFoundError) {
+      log("WARN", `${name} | ${elapsed}ms | NOT_FOUND`);
+      return jsonRpcError(id, -32602, err.message);
+    }
+
+    log("ERROR", `${name} | ${elapsed}ms | FAIL | ${err.message}`);
     return jsonRpcSuccess(id, {
       content: [
         {
@@ -112,53 +155,53 @@ function jsonRpcError(id, code, message) {
   return { jsonrpc: "2.0", id, error: { code, message } };
 }
 
-function logCall(toolName, elapsed, success, error) {
-  const status = success ? "OK" : "FAIL";
-  const errorStr = error ? ` | ${error}` : "";
-  console.log(`[MCP] ${toolName} | ${elapsed}ms | ${status}${errorStr}`);
+function log(level, message) {
+  const ts = new Date().toISOString();
+  console.log(`[${ts}] [MCP] [${level}] ${message}`);
 }
 
 /**
- * STDIO transport — reads JSON-RPC from stdin, writes to stdout.
+ * Start the HTTP MCP server.
  */
-async function startStdioTransport() {
-  console.error(
-    `[MCP] ${SERVER_INFO.name} v${SERVER_INFO.version} starting (stdio)...`,
-  );
+function startServer() {
+  const app = express();
 
-  let buffer = "";
+  // Mount MCP transport at /mcp
+  const transportOptions = {};
+  if (isAuthEnabled()) {
+    transportOptions.authMiddleware = authMiddleware;
+  }
+  const mcpRouter = createHttpTransport(handleRequest, transportOptions);
+  app.use("/mcp", mcpRouter);
 
-  process.stdin.setEncoding("utf8");
-  process.stdin.on("data", async (chunk) => {
-    buffer += chunk;
-
-    // Process complete JSON messages (newline-delimited)
-    const lines = buffer.split("\n");
-    buffer = lines.pop(); // Keep incomplete line in buffer
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-
-      try {
-        const request = JSON.parse(trimmed);
-        const response = await handleRequest(request);
-        if (response && request.id !== undefined) {
-          process.stdout.write(JSON.stringify(response) + "\n");
-        }
-      } catch (err) {
-        const errResponse = jsonRpcError(null, -32700, "Parse error");
-        process.stdout.write(JSON.stringify(errResponse) + "\n");
-      }
-    }
+  // Health endpoint
+  app.get("/health", (req, res) => {
+    res.json({
+      status: "ok",
+      server: SERVER_INFO,
+      sapConnected: context ? context.connected : false,
+      uptime: process.uptime(),
+    });
   });
 
-  process.stdin.on("end", async () => {
+  app.listen(MCP_PORT, MCP_HOST, () => {
+    log("INFO", `${SERVER_INFO.name} v${SERVER_INFO.version}`);
+    log("INFO", `Listening on http://${MCP_HOST}:${MCP_PORT}/mcp`);
+    log("INFO", `Health: http://${MCP_HOST}:${MCP_PORT}/health`);
+    log("INFO", `Transport: HTTP POST`);
+    log("INFO", `Auth: ${isAuthEnabled() ? "ENABLED" : "DISABLED (stub)"}`);
+    log("INFO", `Tools: ${buildToolDefinitions().length} registered`);
+  });
+
+  // Graceful shutdown
+  process.on("SIGINT", async () => {
+    log("INFO", "Shutting down...");
     if (context) await context.disconnect();
     process.exit(0);
   });
 
-  process.on("SIGINT", async () => {
+  process.on("SIGTERM", async () => {
+    log("INFO", "Shutting down...");
     if (context) await context.disconnect();
     process.exit(0);
   });
@@ -166,7 +209,7 @@ async function startStdioTransport() {
 
 // Start if run directly
 if (require.main === module) {
-  startStdioTransport();
+  startServer();
 }
 
-module.exports = { handleRequest, SERVER_INFO };
+module.exports = { handleRequest, SERVER_INFO, startServer };
