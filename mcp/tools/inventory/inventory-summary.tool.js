@@ -9,12 +9,18 @@ module.exports = {
   inputSchema: {
     type: "object",
     properties: {
+      projectId: { type: "string", description: "KTern project ID (optional)" },
+      systemID: { type: "string", description: "SAP System ID (optional)" },
       plant: { type: "string", description: "SAP Plant code" },
     },
     required: ["plant"],
   },
   async handler(args, ctx) {
-    const records = await ctx.inventoryService.getInventoryDataset({
+    const { inventoryService } = await ctx.getServices(
+      args.projectId,
+      args.systemID,
+    );
+    const records = await inventoryService.getInventoryDataset({
       plant: args.plant,
     });
     const summary = ctx.inventorySummary.summarizeByLocation(records);

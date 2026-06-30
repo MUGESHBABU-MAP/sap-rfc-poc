@@ -5,16 +5,23 @@
 module.exports = {
   name: "system.health",
   description:
-    "Check system health: SAP connection status, server version, current time.",
-  inputSchema: { type: "object", properties: {} },
+    "Check system health: connection factory status, server version, current time.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      projectId: { type: "string", description: "KTern project ID (optional)" },
+      systemID: { type: "string", description: "SAP System ID (optional)" },
+    },
+  },
   async handler(args, ctx) {
     return {
       success: true,
       data: {
-        sapConnected: ctx.connected,
-        serverVersion: "4.0.0",
+        serverVersion: "5.0.0",
         currentTime: new Date().toISOString(),
+        activeConnections: ctx.connectionFactory.getConnectionCount(),
         runHistoryCount: ctx.auditTrailService.getRunCount(),
+        mongoConfigured: !!process.env.MONGO_URI,
       },
     };
   },

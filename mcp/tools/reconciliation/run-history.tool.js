@@ -9,6 +9,8 @@ module.exports = {
   inputSchema: {
     type: "object",
     properties: {
+      projectId: { type: "string", description: "KTern project ID (optional)" },
+      systemID: { type: "string", description: "SAP System ID (optional)" },
       companyCode: { type: "string", description: "Filter by company code" },
       plant: { type: "string", description: "Filter by plant" },
       fiscalYear: { type: "string", description: "Filter by fiscal year" },

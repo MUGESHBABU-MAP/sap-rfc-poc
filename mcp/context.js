@@ -1,8 +1,13 @@
 /**
- * MCP Context (Phase 4)
+ * MCP Context (Phase 5)
  *
  * Dependency injection container for MCP tools.
- * All tools receive this context — no tool instantiates services directly.
+ * Supports multi-project SAP system resolution.
+ *
+ * Tools call: ctx.getServices(projectId, systemID)
+ * Returns services wired to the correct SAP connection.
+ *
+ * If projectId/systemID not provided, falls back to .env credentials.
  */
 require("dotenv").config({
   path: require("path").resolve(__dirname, "../.env"),
@@ -19,6 +24,10 @@ const CompanyService = require("../services/company.service");
 const AccountService = require("../services/account.service");
 const AuditTrailService = require("../services/audit-trail.service");
 const RunConfigurationService = require("../services/run-configuration.service");
+const ProjectResolverService = require("../services/project-resolver.service");
+const SystemDefinitionRepository = require("../services/system-definition.repository");
+const CredentialProviderService = require("../services/credential-provider.service");
+const SAPConnectionFactory = require("../services/sap-connection.factory");
 
 const accountMaster = require("../config/inventory-account-master.json");
 
@@ -27,54 +36,132 @@ const accountMaster = require("../config/inventory-account-master.json");
  * @returns {MCPContext}
  */
 function createContext() {
-  const sapConfig = {
-    user: process.env.SAP_USER,
-    passwd: process.env.SAP_PASSWORD,
-    ashost: process.env.SAP_ASHOST,
-    sysnr: process.env.SAP_SYSNR,
-    client: process.env.SAP_CLIENT,
-    lang: process.env.SAP_LANG,
-  };
+  // MongoDB client (lazy — only created when needed)
+  let mongoClient = null;
 
-  const sapService = new SAPService(sapConfig);
-  const inventoryService = new InventoryDatasetService(sapService);
+  // Initialize credential resolution infrastructure
+  // These work with or without MongoDB (fallback to ENV)
+  const projectResolver = new ProjectResolverService(getMongoClient());
+  const systemRepository = new SystemDefinitionRepository(getMongoClient());
+  const credentialProvider = new CredentialProviderService(
+    projectResolver,
+    systemRepository,
+  );
+  const connectionFactory = new SAPConnectionFactory(credentialProvider);
+
+  // Shared services (not SAP-dependent)
   const inventorySummary = new InventorySummaryService();
-  const glService = new GLDatasetService(sapService);
   const glSummary = new GLSummaryService();
   const reconciliationService = new ReconciliationService();
   const financeWorkbookService = new FinanceWorkbookService();
-  const companyService = new CompanyService(sapService);
-  const accountService = new AccountService(sapService);
   const auditTrailService = new AuditTrailService();
   const runConfigurationService = new RunConfigurationService();
 
   return {
-    sapService,
-    inventoryService,
+    // Shared services (no SAP dependency)
     inventorySummary,
-    glService,
     glSummary,
     reconciliationService,
     financeWorkbookService,
-    companyService,
-    accountService,
     auditTrailService,
     runConfigurationService,
     accountMaster,
-    connected: false,
+    connectionFactory,
+    credentialProvider,
+    projectResolver,
+    systemRepository,
 
-    async connect() {
-      if (!this.connected) {
-        await this.sapService.connect();
-        this.connected = true;
-      }
+    /**
+     * Get SAP-connected services for a specific project/system.
+     * This is the primary method tools should call.
+     *
+     * @param {string} [projectId] - KTern project ID (optional, falls back to ENV)
+     * @param {string} [systemID] - SAP system ID (optional, falls back to ENV)
+     * @returns {Promise<ConnectedServices>}
+     */
+    async getServices(projectId, systemID) {
+      const sapService = await connectionFactory.create(projectId, systemID);
+
+      return {
+        sapService,
+        inventoryService: new InventoryDatasetService(sapService),
+        glService: new GLDatasetService(sapService),
+        companyService: new CompanyService(sapService),
+        accountService: new AccountService(sapService),
+      };
     },
 
-    async disconnect() {
-      if (this.connected) {
-        await this.sapService.disconnect();
-        this.connected = false;
+    /**
+     * Disconnect all cached connections.
+     */
+    async disconnectAll() {
+      await connectionFactory.disconnectAll();
+    },
+  };
+}
+
+/**
+ * Get or create MongoDB client.
+ * Returns a stub if MongoDB is not configured.
+ */
+function getMongoClient() {
+  const mongoUri = process.env.MONGO_URI;
+
+  if (!mongoUri) {
+    // Return stub that will cause credential provider to fall back to ENV
+    return {
+      db() {
+        return {
+          collection() {
+            return {
+              async findOne() {
+                return null;
+              },
+              find() {
+                return {
+                  async toArray() {
+                    return [];
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+  }
+
+  // Lazy connect — only when actually used
+  let client = null;
+  return {
+    db(dbName) {
+      if (!client) {
+        try {
+          const { MongoClient } = require("mongodb");
+          client = new MongoClient(mongoUri);
+          // Note: MongoClient 4.x auto-connects on first operation
+        } catch (e) {
+          console.warn("[MCP Context] MongoDB unavailable:", e.message);
+          // Return stub
+          return {
+            collection() {
+              return {
+                async findOne() {
+                  return null;
+                },
+                find() {
+                  return {
+                    async toArray() {
+                      return [];
+                    },
+                  };
+                },
+              };
+            },
+          };
+        }
       }
+      return client.db(dbName);
     },
   };
 }

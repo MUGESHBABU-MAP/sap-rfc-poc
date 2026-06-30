@@ -9,6 +9,8 @@ module.exports = {
   inputSchema: {
     type: "object",
     properties: {
+      projectId: { type: "string", description: "KTern project ID (optional)" },
+      systemID: { type: "string", description: "SAP System ID (optional)" },
       companyCode: { type: "string", description: "SAP Company Code" },
       plant: { type: "string", description: "SAP Plant code" },
       fiscalYear: { type: "string", description: "Fiscal Year" },
@@ -26,6 +28,9 @@ module.exports = {
     required: ["companyCode", "plant", "fiscalYear"],
   },
   async handler(args, ctx) {
+    const { inventoryService, glService, companyService } =
+      await ctx.getServices(args.projectId, args.systemID);
+
     // Create run configuration
     const runConfig = ctx.runConfigurationService.createRunConfiguration({
       companyCode: args.companyCode,
@@ -39,12 +44,12 @@ module.exports = {
     const startTime = Date.now();
 
     // Get currency
-    const companyData = await ctx.companyService.getCompanyCurrency(
+    const companyData = await companyService.getCompanyCurrency(
       runConfig.companyCode,
     );
 
     // Extract inventory
-    const inventoryRecords = await ctx.inventoryService.getInventoryDataset({
+    const inventoryRecords = await inventoryService.getInventoryDataset({
       plant: runConfig.plant,
     });
 
@@ -60,7 +65,7 @@ module.exports = {
     }
 
     // Extract GL
-    const glRecords = await ctx.glService.getGLBalances({
+    const glRecords = await glService.getGLBalances({
       companyCode: runConfig.companyCode,
       fiscalYear: runConfig.fiscalYear,
       inventoryAccounts: glAccountFilter,

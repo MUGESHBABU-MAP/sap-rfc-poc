@@ -9,6 +9,8 @@ module.exports = {
   inputSchema: {
     type: "object",
     properties: {
+      projectId: { type: "string", description: "KTern project ID (optional)" },
+      systemID: { type: "string", description: "SAP System ID (optional)" },
       companyCode: { type: "string", description: "Company Code to validate" },
       plant: { type: "string", description: "Plant to validate" },
       fiscalYear: { type: "string", description: "Fiscal Year" },
@@ -92,6 +94,7 @@ module.exports = {
         warnings,
         configuredAccounts: configured.length,
         selectedAccounts: (args.selectedAccounts || []).length,
+        multiProjectEnabled: !!process.env.MONGO_URI,
       },
     };
   },

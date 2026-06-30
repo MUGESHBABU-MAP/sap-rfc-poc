@@ -91,27 +91,9 @@ async function handleToolCall(id, params) {
     return jsonRpcError(id, -32602, `Unknown tool: ${name}`);
   }
 
-  // Ensure context and SAP connection
+  // Ensure context exists (tools manage their own SAP connections via ctx.getServices)
   if (!context) {
     context = createContext();
-  }
-  if (!context.connected) {
-    try {
-      await context.connect();
-    } catch (err) {
-      return jsonRpcSuccess(id, {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              success: false,
-              error: { code: "SAP_CONNECTION_FAILED", message: err.message },
-            }),
-          },
-        ],
-        isError: true,
-      });
-    }
   }
 
   const startTime = Date.now();
@@ -196,13 +178,13 @@ function startServer() {
   // Graceful shutdown
   process.on("SIGINT", async () => {
     log("INFO", "Shutting down...");
-    if (context) await context.disconnect();
+    if (context) await context.disconnectAll();
     process.exit(0);
   });
 
   process.on("SIGTERM", async () => {
     log("INFO", "Shutting down...");
-    if (context) await context.disconnect();
+    if (context) await context.disconnectAll();
     process.exit(0);
   });
 }

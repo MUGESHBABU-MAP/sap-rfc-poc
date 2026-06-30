@@ -9,6 +9,8 @@ module.exports = {
   inputSchema: {
     type: "object",
     properties: {
+      projectId: { type: "string", description: "KTern project ID (optional)" },
+      systemID: { type: "string", description: "SAP System ID (optional)" },
       companyCode: {
         type: "string",
         description: "SAP Company Code (e.g., '1000')",
@@ -23,12 +25,13 @@ module.exports = {
     required: ["companyCode"],
   },
   async handler(args, ctx) {
+    const { glService } = await ctx.getServices(args.projectId, args.systemID);
     const filters = {
       companyCode: args.companyCode,
       fiscalYear: args.fiscalYear,
       inventoryAccounts: args.inventoryAccounts,
     };
-    const records = await ctx.glService.getGLBalances(filters);
+    const records = await glService.getGLBalances(filters);
     return {
       success: true,
       data: { recordCount: records.length, records },

@@ -62,12 +62,14 @@
     "test-faglb03-balance-formula": "node tests/test-faglb03-balance-formula.js",
     "mcp-server": "node mcp/server.js",
     "test-mcp": "node mcp/test-mcp.js",
-    "test-mcp-protocol": "node mcp/tests/test-mcp-protocol.js"
+    "test-mcp-protocol": "node mcp/tests/test-mcp-protocol.js",
+    "test-multi-project": "node tests/test-multi-project.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",
     "express": "4.18.2",
+    "mongodb": "^7.4.0",
     "node-rfc": "^1.2.0"
   },
   "volta": {
