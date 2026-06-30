@@ -26,7 +26,10 @@ class SystemDefinitionRepository {
     const db = this.mongoClient.db(dbName);
     const col = db.collection("kt_m_systemDefinitions");
 
-    const systemDef = await col.findOne({ systemID });
+    // Support both field naming conventions (systemId vs systemID)
+    const systemDef = await col.findOne({
+      $or: [{ systemId: systemID }, { systemID: systemID }],
+    });
 
     if (!systemDef) {
       throw new Error(`System '${systemID}' not found in database '${dbName}'`);

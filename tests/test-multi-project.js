@@ -25,6 +25,21 @@ function createMockMongoClient(data = {}) {
                 docs.find((d) => {
                   if (query._id) return String(d._id) === String(query._id);
                   if (query.systemID) return d.systemID === query.systemID;
+                  if (query.systemId)
+                    return (
+                      d.systemID === query.systemId ||
+                      d.systemId === query.systemId
+                    );
+                  // Support $or queries
+                  if (query.$or) {
+                    return query.$or.some((cond) => {
+                      if (cond.systemId)
+                        return (d.systemID || d.systemId) === cond.systemId;
+                      if (cond.systemID)
+                        return (d.systemID || d.systemId) === cond.systemID;
+                      return false;
+                    });
+                  }
                   return false;
                 }) || null
               );

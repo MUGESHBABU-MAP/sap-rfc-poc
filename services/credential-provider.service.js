@@ -68,15 +68,22 @@ class CredentialProviderService {
       // Step 3: Select best connection
       const connection = this.systemRepository.selectConnection(systemDef);
 
-      // Step 4: Build RFC config
+      // Step 4: Build RFC config (support both naming conventions)
       const credentials = {
         ashost:
-          systemDef.applicationServer || connection.applicationServer || "",
-        sysnr: systemDef.instanceNumber || connection.instanceNumber || "00",
+          systemDef.applicationServer ||
+          connection.applicationServer ||
+          connection.host ||
+          "",
+        sysnr:
+          systemDef.instanceNumber ||
+          connection.instanceNumber ||
+          connection.systemNumber ||
+          "00",
         client: systemDef.client || connection.client || "",
         user: connection.user || connection.username || "",
         passwd: this._resolvePassword(connection),
-        lang: connection.language || "EN",
+        lang: connection.lang || connection.language || "EN",
         source: "dynamic",
         projectId,
         systemID,
