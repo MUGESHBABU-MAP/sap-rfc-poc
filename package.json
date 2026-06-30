@@ -63,7 +63,8 @@
     "mcp-server": "node mcp/server.js",
     "test-mcp": "node mcp/test-mcp.js",
     "test-mcp-protocol": "node mcp/tests/test-mcp-protocol.js",
-    "test-multi-project": "node tests/test-multi-project.js"
+    "test-multi-project": "node tests/test-multi-project.js",
+    "test-system-list": "node mcp/tests/test-system-list.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

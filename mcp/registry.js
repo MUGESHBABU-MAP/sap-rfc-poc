@@ -23,6 +23,7 @@ const configuration = require("./tools/reconciliation/configuration.tool");
 const health = require("./tools/system/health.tool");
 const connection = require("./tools/system/connection.tool");
 const metadata = require("./tools/system/metadata.tool");
+const systemList = require("./tools/system/system-list.tool");
 
 /**
  * Get all registered tools as an array.
@@ -41,6 +42,7 @@ function getAllTools() {
     health,
     connection,
     metadata,
+    systemList,
   ];
 }
 

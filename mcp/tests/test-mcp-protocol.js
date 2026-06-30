@@ -47,8 +47,8 @@ async function runTests() {
 
   const allTools = getAllTools();
   assert(
-    allTools.length === 11,
-    `Registry has 11 tools (got ${allTools.length})`,
+    allTools.length === 12,
+    `Registry has 12 tools (got ${allTools.length})`,
   );
 
   const expectedTools = [
@@ -74,7 +74,7 @@ async function runTests() {
   console.log("\n--- Tool Definitions ---\n");
 
   const defs = buildToolDefinitions();
-  assert(defs.length === 11, `buildToolDefinitions: 11 tools`);
+  assert(defs.length === 12, `buildToolDefinitions: 12 tools`);
   for (const def of defs) {
     assert(
       def.name && def.description && def.inputSchema,
@@ -126,8 +126,8 @@ async function runTests() {
     "tools/list: result.tools is array",
   );
   assert(
-    listResp.result.tools.length === 11,
-    `tools/list: 11 tools (got ${listResp.result.tools.length})`,
+    listResp.result.tools.length === 12,
+    `tools/list: 12 tools (got ${listResp.result.tools.length})`,
   );
 
   // Verify tool structure
